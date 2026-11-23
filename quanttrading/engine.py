@@ -84,7 +84,7 @@ def _simulate(bars, params, input_file, input_sha256):
         "parameters": {
             "fee_rate": params.fee_rate_text,
             "position_size": str(params.position_size),
-            "starting_capital": params.starting_capital_text,
+            "starting_capital": _money(params.starting_capital),
         },
         "symbol": bars[0].symbol,
         "total_fees": _money(total_fees),

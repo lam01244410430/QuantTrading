@@ -323,14 +323,21 @@ def test_later_e101_still_writes_no_partial_output(tmp_path):
     assert_errors(out, "E101_INSUFFICIENT_CASH,6,")
 
 
-def test_cash_can_reach_zero_and_parameters_keep_raw_spelling(tmp_path):
+def test_cash_can_reach_zero_and_summary_preserves_fee_rate_spelling(tmp_path):
     status, out = run(tmp_path, flags=("--starting-capital", "0005005", "--fee-rate", "0.00000000"))
     assert status == 0
     assert (out / "fills.csv").read_bytes().splitlines()[1].endswith(b",0.00,0.00")
     summary = json.loads((out / "summary.json").read_bytes())
     assert summary["parameters"] == {
-        "fee_rate": "0.00000000", "position_size": "50", "starting_capital": "0005005",
+        "fee_rate": "0.00000000", "position_size": "50", "starting_capital": "5005.00",
     }
+
+
+def test_summary_formats_starting_capital_with_two_decimal_places(tmp_path):
+    status, out = run(tmp_path, flags=("--starting-capital", "5000", "--position-size", "1"))
+    assert status == 0
+    summary = json.loads((out / "summary.json").read_bytes())
+    assert summary["parameters"]["starting_capital"] == "5000.00"
 
 
 def test_max_price_width_is_accepted_and_price_spelling_is_retained(tmp_path):

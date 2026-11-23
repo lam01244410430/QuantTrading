@@ -52,6 +52,8 @@ cannot be funded. The summary records the contract version, parameters, and
 the SHA-256 of the original input bytes. It records the input basename only:
 filename bytes are decoded as UTF-8 regardless of locale, with invalid bytes
 shown as `\xNN` escapes.
+The summary shows starting capital to two decimal places and the fee rate
+exactly as supplied.
 
 **Simulated backtest on synthetic or local data. Not trading or investment
 advice. No orders were placed.** The backtester uses no network data,

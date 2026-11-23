@@ -37,7 +37,6 @@ class Parameters:
     starting_capital: Decimal
     position_size: int
     fee_rate: Decimal
-    starting_capital_text: str
     fee_rate_text: str
 
 
@@ -65,7 +64,7 @@ def parameters(starting_capital, position_size, fee_rate):
         issues.append(Issue("E102_BAD_PARAMETER", column="fee_rate"))
     if issues:
         raise Rejected(3, *issues)
-    return Parameters(capital, size, fee, starting_capital, fee_rate)
+    return Parameters(capital, size, fee, fee_rate)
 
 
 def is_local_path(path):
