@@ -1,7 +1,9 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
+import sys
 
 from .constants import (
     DEFAULT_FEE_RATE, DEFAULT_POSITION_SIZE, DEFAULT_STARTING_CAPITAL,
@@ -9,7 +11,9 @@ from .constants import (
 )
 from .engine import simulate
 from .report import render_report
-from .validation import Rejected, parameters, read_input, validate
+from .validation import URI, Rejected, parameters, read_input, validate
+
+OUTPUT_NAMES = ("fills.csv", "equity.csv", "summary.json", "errors.csv", "report.html")
 
 
 def _write(path, content):
@@ -18,6 +22,23 @@ def _write(path, content):
 
 def _csv(header, rows):
     return "\n".join([",".join(header), *(",".join(row) for row in rows)]) + "\n"
+
+
+def _input_alias(input_path, out):
+    if URI.match(input_path):
+        return None
+    source = Path(input_path)
+    resolved = os.path.normcase(os.path.realpath(source))
+    for name in OUTPUT_NAMES:
+        destination = out / name
+        if os.path.normcase(os.path.realpath(destination)) == resolved:
+            return name
+        try:
+            if source.samefile(destination):
+                return name
+        except (FileNotFoundError, NotADirectoryError):
+            continue
+    return None
 
 
 def main(argv=None):
@@ -30,6 +51,15 @@ def main(argv=None):
     parser.add_argument("--fee-rate", default=DEFAULT_FEE_RATE)
     parser.add_argument("--html", action="store_true", help="also write a standalone report.html")
     args = parser.parse_args(argv)
+
+    try:
+        alias = _input_alias(args.input, args.out)
+    except OSError as exc:
+        print(f"Cannot check output paths: {exc}", file=sys.stderr)
+        return 3
+    if alias:
+        print(f"Output {alias} aliases the input file; no output was written.", file=sys.stderr)
+        return 3
 
     try:
         params = parameters(args.starting_capital, args.position_size, args.fee_rate)

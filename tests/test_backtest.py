@@ -198,6 +198,37 @@ def test_unreadable(tmp_path, monkeypatch, kind):
     assert_errors(out, "E104_INPUT_UNREADABLE,0,")
 
 
+@pytest.mark.parametrize("name", ["fills.csv", "equity.csv", "summary.json", "errors.csv", "report.html"])
+def test_refuses_output_named_like_input(tmp_path, capsys, name):
+    source = tmp_path / name
+    source.write_bytes(RAW)
+    assert main([str(source), "--out", str(tmp_path)]) == 3
+    assert source.read_bytes() == RAW
+    assert list(tmp_path.iterdir()) == [source]
+    assert f"Output {name} aliases the input file" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("kind", ["hard", "symbolic"])
+def test_refuses_output_link_to_input_on_failure(tmp_path, capsys, kind):
+    source = tmp_path / "invalid.csv"
+    source.write_bytes(b"")
+    out = tmp_path / "out"
+    out.mkdir()
+    alias = out / "errors.csv"
+    try:
+        if kind == "hard":
+            alias.hardlink_to(source)
+        else:
+            alias.symlink_to(source)
+    except OSError as exc:
+        pytest.skip(f"{kind} links not supported: {exc}")
+
+    assert main([str(source), "--out", str(out)]) == 3
+    assert source.read_bytes() == b""
+    assert list(out.iterdir()) == [alias]
+    assert "Output errors.csv aliases the input file" in capsys.readouterr().err
+
+
 def test_e101_default_fixture(tmp_path):
     status, out = run(tmp_path, flags=("--starting-capital", "5000.00", "--html"))
     assert status == 4
