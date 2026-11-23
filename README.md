@@ -27,6 +27,8 @@ python3 -m quanttrading.backtest path/to/local.csv --out my-run --starting-capit
 On Windows, use `py -3` in place of `python3`. The three parameter values
 shown are the defaults. Use a separate output directory for each run to keep
 prior reports separate, and omit `--html` if you only want the contract files.
+The input must be a local file, not a URI. UNC network paths starting with
+`\\` or `//` are rejected for both input and output.
 
 Start your UTF-8 CSV (no BOM) with this exact header and include at least two
 bars for one symbol, with unique, increasing UTC bar-open timestamps:

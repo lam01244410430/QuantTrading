@@ -14,7 +14,7 @@ from .constants import (
 )
 from .engine import simulate
 from .report import render_report
-from .validation import URI, Rejected, parameters, read_input, validate
+from .validation import Rejected, is_local_input, is_unc, parameters, read_input, validate
 
 OUTPUT_NAMES = ("fills.csv", "equity.csv", "summary.json", "errors.csv", "report.html")
 
@@ -55,7 +55,7 @@ def _csv(header, rows):
 
 
 def _input_alias(input_path, out):
-    if URI.match(input_path):
+    if not is_local_input(input_path):
         return None
     source = Path(input_path)
     resolved = os.path.normcase(os.path.realpath(source))
@@ -75,15 +75,20 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Run a local ohlc-signal/v2 backtest.",
                                      allow_abbrev=False)
     parser.add_argument("input", help="local OHLC+signal CSV path")
-    parser.add_argument("--out", required=True, type=Path, help="output directory")
+    parser.add_argument("--out", required=True, help="output directory")
     parser.add_argument("--starting-capital", default=DEFAULT_STARTING_CAPITAL)
     parser.add_argument("--position-size", default=DEFAULT_POSITION_SIZE)
     parser.add_argument("--fee-rate", default=DEFAULT_FEE_RATE)
     parser.add_argument("--html", action="store_true", help="also write a standalone report.html")
     args = parser.parse_args(argv)
 
+    if is_unc(args.out):
+        print("Output directory must be local; UNC paths are not supported.", file=sys.stderr)
+        return 3
+    out = Path(args.out)
+
     try:
-        alias = _input_alias(args.input, args.out)
+        alias = _input_alias(args.input, out)
     except OSError as exc:
         print(f"Cannot check output paths: {exc}", file=sys.stderr)
         return 3
@@ -115,7 +120,7 @@ def main(argv=None):
             outputs["report.html"] = render_report(summary, fills, equity)
 
     try:
-        _write_outputs(args.out, outputs)
+        _write_outputs(out, outputs)
     except OSError as exc:
         print(f"Cannot write backtest output: {exc}", file=sys.stderr)
         return 3
