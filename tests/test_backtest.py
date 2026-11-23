@@ -430,6 +430,30 @@ def test_publish_and_rollback_failure_retains_unrestored_backups(tmp_path, monke
     assert f"recovery files kept at {recovery}" in stderr
 
 
+@pytest.mark.parametrize("interrupt_at", ["after_backup", "before_replacement"])
+def test_interrupt_during_publication_restores_original_output(tmp_path, monkeypatch, interrupt_at):
+    out = tmp_path / "out"
+    out.mkdir()
+    fills = out / "fills.csv"
+    fills.write_bytes(b"previous fills\n")
+    replace = os.replace
+
+    def interrupted_replace(source, destination):
+        if interrupt_at == "after_backup" and destination.name == "fills.csv.previous":
+            replace(source, destination)
+            raise KeyboardInterrupt("test interrupt after backup")
+        if interrupt_at == "before_replacement" and source.name == "fills.csv":
+            if destination == fills:
+                raise KeyboardInterrupt("test interrupt before replacement")
+        return replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", interrupted_replace)
+    with pytest.raises(KeyboardInterrupt, match="test interrupt"):
+        run(tmp_path)
+    assert list(out.iterdir()) == [fills]
+    assert fills.read_bytes() == b"previous fills\n"
+
+
 def test_e101_default_fixture(tmp_path):
     status, out = run(tmp_path, flags=("--starting-capital", "5000.00", "--html"))
     assert status == 4

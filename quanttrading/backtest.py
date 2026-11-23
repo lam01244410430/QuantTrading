@@ -59,32 +59,47 @@ def _write_outputs(out, outputs):
 
         stale = [name for name in existing if name not in outputs]
         changed = {}
+        retain_backups = True
         try:
             for name in (*outputs, *stale):
                 destination = out / name
                 if name in existing:
                     backup = stage / (name + ".previous")
-                    os.replace(destination, backup)
                     changed[name] = backup
+                    os.replace(destination, backup)
                 if name in outputs:
-                    os.replace(stage / name, destination)
                     changed.setdefault(name, None)
-        except OSError as publish_error:
+                    os.replace(stage / name, destination)
+        except BaseException as publish_error:
             rollback_errors = []
             for name, backup in reversed(changed.items()):
                 try:
-                    if backup is not None:
-                        os.replace(backup, out / name)
-                    else:
-                        (out / name).unlink()
-                except OSError as rollback_error:
-                    rollback_errors.append(f"{name}: {rollback_error}")
+                    if backup is None:
+                        (out / name).unlink(missing_ok=True)
+                        continue
+                    try:
+                        backup.lstat()
+                    except FileNotFoundError:
+                        continue
+                    os.replace(backup, out / name)
+                except BaseException as rollback_error:
+                    rollback_errors.append((name, rollback_error))
             if rollback_errors:
-                retain_backups = True
-                details = "; ".join(rollback_errors)
-                raise OSError(f"{publish_error}; rollback failed ({details}); "
-                              f"recovery files kept at {stage}") from publish_error
+                details = "; ".join(f"{name}: {error}" for name, error in rollback_errors)
+                message = f"rollback failed ({details}); recovery files kept at {stage}"
+                if isinstance(publish_error, OSError):
+                    interrupt = next((error for _, error in rollback_errors
+                                      if not isinstance(error, OSError)), None)
+                    if interrupt is None:
+                        raise OSError(f"{publish_error}; {message}") from publish_error
+                    print(message, file=sys.stderr)
+                    raise interrupt from publish_error
+                print(message, file=sys.stderr)
+            else:
+                retain_backups = False
             raise
+        else:
+            retain_backups = False
     finally:
         if not retain_backups:
             rmtree(stage)
