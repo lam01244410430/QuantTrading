@@ -68,16 +68,12 @@ def parameters(starting_capital, position_size, fee_rate):
     return Parameters(capital, size, fee, starting_capital, fee_rate)
 
 
-def is_unc(path):
-    return path.startswith(("\\\\", "//"))
-
-
-def is_local_input(path):
-    return not (is_unc(path) or URI.match(path))
+def is_local_path(path):
+    return not (path.startswith(("\\\\", "//")) or URI.match(path))
 
 
 def read_input(input_path):
-    if not is_local_input(input_path):
+    if not is_local_path(input_path):
         raise Rejected(3, Issue("E103_INPUT_NOT_LOCAL"))
     path = Path(input_path)
     try:

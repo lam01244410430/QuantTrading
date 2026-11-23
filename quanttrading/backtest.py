@@ -14,7 +14,7 @@ from .constants import (
 )
 from .engine import simulate
 from .report import render_report
-from .validation import Rejected, is_local_input, is_unc, parameters, read_input, validate
+from .validation import Rejected, is_local_path, parameters, read_input, validate
 
 OUTPUT_NAMES = ("fills.csv", "equity.csv", "summary.json", "errors.csv", "report.html")
 PARAMETER_DEFAULTS = {
@@ -79,7 +79,7 @@ def _csv(header, rows):
 
 
 def _input_alias(input_path, out):
-    if not is_local_input(input_path):
+    if not is_local_path(input_path):
         return None
     source = Path(input_path)
     resolved = os.path.normcase(os.path.realpath(source))
@@ -105,8 +105,9 @@ def main(argv=None):
     parser.add_argument("--html", action="store_true", help="also write a standalone report.html")
     args = parser.parse_args(_parameter_args(sys.argv[1:] if argv is None else argv))
 
-    if is_unc(args.out):
-        print("Output directory must be local; UNC paths are not supported.", file=sys.stderr)
+    if not is_local_path(args.out):
+        print("E103_INPUT_NOT_LOCAL: Output directory must be local; "
+              "URIs and UNC paths are not supported.", file=sys.stderr)
         return 3
     out = Path(args.out)
 

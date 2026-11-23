@@ -194,10 +194,13 @@ def test_rejects_unc_input(tmp_path, path):
     assert_errors(out, "E103_INPUT_NOT_LOCAL,0,")
 
 
-@pytest.mark.parametrize("path", [r"\\server\share\out", "//server/share/out"])
-def test_rejects_unc_output_without_filesystem_checks(monkeypatch, capsys, path):
+@pytest.mark.parametrize("path", [
+    r"\\server\share\out", "//server/share/out",
+    "file:///tmp/out", "https://example.com/out", "custom+git.1-://out",
+])
+def test_rejects_nonlocal_output_without_filesystem_checks(monkeypatch, capsys, path):
     def unexpected_filesystem_call(*args, **kwargs):
-        pytest.fail("UNC output must be rejected before checking or creating paths")
+        pytest.fail("Non-local output must be rejected before checking or creating paths")
 
     with monkeypatch.context() as patch:
         patch.setattr(os.path, "realpath", unexpected_filesystem_call)
@@ -205,7 +208,7 @@ def test_rejects_unc_output_without_filesystem_checks(monkeypatch, capsys, path)
         assert main([str(BASIC), "--out", path]) == 3
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "Output directory must be local" in captured.err
+    assert "E103_INPUT_NOT_LOCAL: Output directory must be local" in captured.err
 
 
 @pytest.mark.parametrize("kind", ["missing", "directory", "unreadable"])
