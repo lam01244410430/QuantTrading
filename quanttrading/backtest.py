@@ -45,6 +45,7 @@ def _write_outputs(out, outputs):
         backups = {}
         for name, content in outputs.items():
             (stage / name).write_bytes(content.encode("utf-8"))
+        for name in OUTPUT_NAMES:
             destination = out / name
             try:
                 mode = destination.lstat().st_mode
@@ -55,13 +56,17 @@ def _write_outputs(out, outputs):
             backups[name] = stage / (name + ".previous")
             copy2(destination, backups[name], follow_symlinks=False)
 
-        published = []
+        changed = []
         try:
             for name in outputs:
                 os.replace(stage / name, out / name)
-                published.append(name)
+                changed.append(name)
+            for name in backups:
+                if name not in outputs:
+                    (out / name).unlink()
+                    changed.append(name)
         except OSError:
-            for name in reversed(published):
+            for name in reversed(changed):
                 if name in backups:
                     os.replace(backups[name], out / name)
                 else:

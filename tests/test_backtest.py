@@ -268,6 +268,26 @@ def test_output_directory_collision_leaves_no_partial_files(tmp_path, capsys, ra
     assert "Cannot write backtest output" in capsys.readouterr().err
 
 
+def test_reused_directory_contains_only_current_managed_outputs(tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    unrelated = out / "notes.txt"
+    unrelated.write_bytes(b"keep me")
+    failed = ("--starting-capital", "5000")
+
+    for flags, expected_status, expected_outputs in (
+        (failed, 4, {"errors.csv"}),
+        (("--html",), 0, set(OUTPUT_SHA) | {"report.html"}),
+        ((), 0, set(OUTPUT_SHA)),
+        (("--html",), 0, set(OUTPUT_SHA) | {"report.html"}),
+        (failed, 4, {"errors.csv"}),
+    ):
+        status, _ = run(tmp_path, flags=flags)
+        assert status == expected_status
+        assert {path.name for path in out.iterdir()} == expected_outputs | {unrelated.name}
+        assert unrelated.read_bytes() == b"keep me"
+
+
 def test_replace_failure_restores_previous_files_and_removes_new_files(tmp_path, monkeypatch, capsys):
     out = tmp_path / "out"
     out.mkdir()
