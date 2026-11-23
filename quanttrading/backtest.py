@@ -39,6 +39,24 @@ def _parameter_args(argv):
         yield argument
 
 
+def _retry_readonly_cleanup(remove, path, exc_info):
+    error = exc_info[1]
+    if not isinstance(error, PermissionError):
+        raise error
+    mode = os.lstat(path).st_mode
+    if not stat.S_ISREG(mode) or mode & stat.S_IWUSR:
+        raise error
+    os.chmod(path, stat.S_IMODE(mode) | stat.S_IWUSR)
+    remove(path)
+
+
+def _cleanup_stage(stage):
+    try:
+        rmtree(stage, onerror=_retry_readonly_cleanup)
+    except OSError as exc:
+        print(f"Warning: could not remove output staging directory {stage}: {exc}", file=sys.stderr)
+
+
 def _write_outputs(out, outputs):
     out.mkdir(parents=True, exist_ok=True)
     stage = Path(mkdtemp(prefix=".quanttrading-", dir=out))
@@ -102,7 +120,7 @@ def _write_outputs(out, outputs):
             retain_backups = False
     finally:
         if not retain_backups:
-            rmtree(stage)
+            _cleanup_stage(stage)
 
 
 def _csv(header, rows):

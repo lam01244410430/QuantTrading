@@ -2,12 +2,13 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 
 import pytest
 
-from quanttrading import validation
+from quanttrading import backtest, validation
 from quanttrading.backtest import main
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -474,6 +475,46 @@ def test_interrupt_during_publication_restores_original_output(tmp_path, monkeyp
         run(tmp_path)
     assert list(out.iterdir()) == [fills]
     assert fills.read_bytes() == b"previous fills\n"
+
+
+def test_cleanup_retries_readonly_backup_after_publishing(tmp_path, monkeypatch):
+    out = tmp_path / "out"
+    out.mkdir()
+    report = out / "report.html"
+    report.write_bytes(b"old report\n")
+    report.chmod(stat.S_IRUSR)
+    rmtree = backtest.rmtree
+
+    def simulate_windows_cleanup(stage, *, onerror):
+        backup = stage / "report.html.previous"
+
+        def remove(path):
+            if not path.stat().st_mode & stat.S_IWUSR:
+                raise PermissionError("simulated Windows read-only backup")
+            path.unlink()
+
+        try:
+            remove(backup)
+        except PermissionError:
+            onerror(remove, backup, sys.exc_info())
+        rmtree(stage)
+
+    monkeypatch.setattr(backtest, "rmtree", simulate_windows_cleanup)
+    status, _ = run(tmp_path, flags=("--html",))
+    assert status == 0
+    assert report.read_bytes().startswith(b"<!doctype html>")
+    assert {path.name for path in out.iterdir()} == OUTPUT_SHA.keys() | {"report.html"}
+
+
+def test_cleanup_failure_does_not_turn_success_into_write_error(tmp_path, monkeypatch, capsys):
+    def cleanup_failure(stage, *, onerror):
+        raise PermissionError("simulated unrecoverable cleanup failure")
+
+    monkeypatch.setattr(backtest, "rmtree", cleanup_failure)
+    status, out = run(tmp_path)
+    assert status == 0
+    assert (out / "summary.json").read_bytes() == (EXPECTED / "summary.json").read_bytes()
+    assert "Warning: could not remove output staging directory" in capsys.readouterr().err
 
 
 def test_e101_default_fixture(tmp_path):
