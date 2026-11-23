@@ -7,6 +7,7 @@ from pathlib import Path
 from .constants import COLUMNS, MAX_PRICE_INTEGER_DIGITS
 
 URI = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+EXTENDED_DRIVE = re.compile(r"^(?:\\\\\?\\|//\?/)[A-Za-z]:[\\/]")
 TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
 SYMBOL = re.compile(r"[A-Z0-9._-]{1,16}")
 PRICE = re.compile(r"-?[0-9]{1,%d}(\.[0-9]{1,8})?" % MAX_PRICE_INTEGER_DIGITS)
@@ -68,7 +69,9 @@ def parameters(starting_capital, position_size, fee_rate):
 
 
 def is_local_path(path):
-    return not (path.startswith(("\\\\", "//")) or URI.match(path))
+    if len(path) >= 2 and all(separator in "\\/" for separator in path[:2]):
+        return EXTENDED_DRIVE.match(path) is not None
+    return URI.match(path) is None
 
 
 def read_input(input_path):

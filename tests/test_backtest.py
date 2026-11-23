@@ -8,7 +8,7 @@ import sys
 import pytest
 
 from quanttrading.backtest import main
-from quanttrading.validation import validate
+from quanttrading.validation import is_local_path, validate
 
 ROOT = Path(__file__).resolve().parents[1]
 BASIC = ROOT / "fixtures" / "fixture_v1_basic.csv"
@@ -190,6 +190,8 @@ def test_rejects_uri(tmp_path, path):
 
 @pytest.mark.parametrize("path", [
     pytest.param(r"\\host\share\x.csv", id="P08"), "//server/share/input.csv",
+    r"/\host\share\x.csv", r"\/host/share/x.csv",
+    r"\\?\UNC\host\share\x.csv", "//?/UNC/host/share/x.csv",
 ])
 def test_rejects_unc_input(tmp_path, path):
     out = tmp_path / "out"
@@ -200,7 +202,10 @@ def test_rejects_unc_input(tmp_path, path):
 @pytest.mark.parametrize("path", [
     pytest.param(r"\\host\share\out", id="P06"),
     pytest.param("s3://bucket/out", id="P07"), "//server/share/out",
+    r"/\host\share\out", r"\/host/share/out",
+    r"\\?\UNC\host\share\out", "//?/UNC/host/share/out",
     "file:///tmp/out", "https://example.com/out", "custom+git.1-://out",
+    "file:///output", "https://example.invalid/output", "Z+1.-://host/output",
 ])
 def test_rejects_nonlocal_output_without_filesystem_checks(monkeypatch, capsys, path):
     def unexpected_filesystem_call(*args, **kwargs):
@@ -218,6 +223,11 @@ def test_rejects_nonlocal_output_without_filesystem_checks(monkeypatch, capsys, 
 def test_nonlocal_output_keeps_parameter_error_precedence(capsys):
     assert main([str(BASIC), "--out", "s3://bucket/out", "--position-size", "0"]) == 3
     assert capsys.readouterr().err == "E102_BAD_PARAMETER,0,position_size\n"
+
+
+@pytest.mark.parametrize("path", [r"\\?\C:\data\x.csv", "//?/C:/data/x.csv"])
+def test_extended_length_windows_drive_is_local(path):
+    assert is_local_path(path)
 
 
 @pytest.mark.parametrize("kind", ["missing", "directory", "unreadable"])
