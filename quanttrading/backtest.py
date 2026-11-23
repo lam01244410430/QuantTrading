@@ -14,7 +14,7 @@ from .constants import (
 )
 from .engine import simulate
 from .report import render_report
-from .validation import Rejected, is_local_path, parameters, read_input, validate
+from .validation import Issue, Rejected, is_local_path, parameters, read_input, validate
 
 OUTPUT_NAMES = ("fills.csv", "equity.csv", "summary.json", "errors.csv", "report.html")
 PARAMETER_DEFAULTS = {
@@ -105,23 +105,11 @@ def main(argv=None):
     parser.add_argument("--html", action="store_true", help="also write a standalone report.html")
     args = parser.parse_args(_parameter_args(sys.argv[1:] if argv is None else argv))
 
-    if not is_local_path(args.out):
-        print("E103_INPUT_NOT_LOCAL: Output directory must be local; "
-              "URIs and UNC paths are not supported.", file=sys.stderr)
-        return 3
-    out = Path(args.out)
-
-    try:
-        alias = _input_alias(args.input, out)
-    except OSError as exc:
-        print(f"Cannot check output paths: {exc}", file=sys.stderr)
-        return 3
-    if alias:
-        print(f"Output {alias} aliases the input file; no output was written.", file=sys.stderr)
-        return 3
-
+    out_is_local = is_local_path(args.out)
     try:
         params = parameters(args.starting_capital, args.position_size, args.fee_rate)
+        if not out_is_local:
+            raise Rejected(3, Issue("E103_INPUT_NOT_LOCAL", column="out"))
         raw = read_input(args.input)
         bars = validate(raw)
         basename = os.fsencode(Path(args.input).name).decode("utf-8", errors="backslashreplace")
@@ -130,9 +118,13 @@ def main(argv=None):
         )
     except Rejected as exc:
         status = exc.exit_code
+        rows = [(issue.code, str(issue.row), issue.column) for issue in exc.issues]
+        if not out_is_local:
+            for row in rows:
+                print(",".join(row), file=sys.stderr)
+            return status
         outputs = {"errors.csv": _csv(
-            ("code", "row", "column"),
-            ((issue.code, str(issue.row), issue.column) for issue in exc.issues),
+            ("code", "row", "column"), rows,
         )}
     else:
         status = 0
@@ -143,6 +135,16 @@ def main(argv=None):
         }
         if args.html:
             outputs["report.html"] = render_report(summary, fills, equity)
+
+    out = Path(args.out)
+    try:
+        alias = _input_alias(args.input, out)
+    except OSError as exc:
+        print(f"Cannot check output paths: {exc}", file=sys.stderr)
+        return 3
+    if alias:
+        print(f"Output {alias} aliases the input file; no output was written.", file=sys.stderr)
+        return 3
 
     try:
         _write_outputs(out, outputs)

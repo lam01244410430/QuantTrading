@@ -8,6 +8,7 @@ import sys
 import pytest
 
 from quanttrading.backtest import main
+from quanttrading.validation import validate
 
 ROOT = Path(__file__).resolve().parents[1]
 BASIC = ROOT / "fixtures" / "fixture_v1_basic.csv"
@@ -99,7 +100,7 @@ def test_positive_bytes_and_hashes(tmp_path):
     pytest.param(b"\n" + RAW, "E001_FILE_EMPTY,0,", id="empty-header"),
     pytest.param(b"not a header\n\xff", "E017_BAD_ENCODING,0,", id="invalid-utf8-precedence"),
     pytest.param(RAW.rstrip(b"\n") + b"\r", "E016_BAD_SIGNAL,6,signal", id="lone-cr"),
-    pytest.param(edit((2, 2, "1234567890123.0")), "E011_BAD_NUMBER,2,open", id="price-cap"),
+    pytest.param(edit((2, 2, "1234567890123.00")), "E011_BAD_NUMBER,2,open", id="P04"),
 ])
 def test_invalid_fixtures(tmp_path, raw, error):
     status, out = run(tmp_path, raw)
@@ -187,7 +188,9 @@ def test_rejects_uri(tmp_path, path):
     assert_errors(out, "E103_INPUT_NOT_LOCAL,0,")
 
 
-@pytest.mark.parametrize("path", [r"\\server\share\input.csv", "//server/share/input.csv"])
+@pytest.mark.parametrize("path", [
+    pytest.param(r"\\host\share\x.csv", id="P08"), "//server/share/input.csv",
+])
 def test_rejects_unc_input(tmp_path, path):
     out = tmp_path / "out"
     assert main([path, "--out", str(out)]) == 3
@@ -195,7 +198,8 @@ def test_rejects_unc_input(tmp_path, path):
 
 
 @pytest.mark.parametrize("path", [
-    r"\\server\share\out", "//server/share/out",
+    pytest.param(r"\\host\share\out", id="P06"),
+    pytest.param("s3://bucket/out", id="P07"), "//server/share/out",
     "file:///tmp/out", "https://example.com/out", "custom+git.1-://out",
 ])
 def test_rejects_nonlocal_output_without_filesystem_checks(monkeypatch, capsys, path):
@@ -208,7 +212,12 @@ def test_rejects_nonlocal_output_without_filesystem_checks(monkeypatch, capsys, 
         assert main([str(BASIC), "--out", path]) == 3
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "E103_INPUT_NOT_LOCAL: Output directory must be local" in captured.err
+    assert captured.err == "E103_INPUT_NOT_LOCAL,0,out\n"
+
+
+def test_nonlocal_output_keeps_parameter_error_precedence(capsys):
+    assert main([str(BASIC), "--out", "s3://bucket/out", "--position-size", "0"]) == 3
+    assert capsys.readouterr().err == "E102_BAD_PARAMETER,0,position_size\n"
 
 
 @pytest.mark.parametrize("kind", ["missing", "directory", "unreadable"])
@@ -333,11 +342,26 @@ def test_cash_can_reach_zero_and_summary_preserves_fee_rate_spelling(tmp_path):
     }
 
 
+def test_p09_capital_is_valid_but_the_default_fill_is_unaffordable(tmp_path):
+    status, out = run(tmp_path, flags=("--starting-capital", "0005005"))
+    assert status == 4
+    assert_errors(out, "E101_INSUFFICIENT_CASH,2,")
+
+
 def test_summary_formats_starting_capital_with_two_decimal_places(tmp_path):
     status, out = run(tmp_path, flags=("--starting-capital", "5000", "--position-size", "1"))
     assert status == 0
     summary = json.loads((out / "summary.json").read_bytes())
     assert summary["parameters"]["starting_capital"] == "5000.00"
+
+
+def test_p05_max_width_open_passes_data_validation(tmp_path):
+    largest = "999999999999.99999999"
+    raw = edit((2, 2, largest), (2, 3, largest))
+    assert validate(raw)[1].open_text == largest
+    status, out = run(tmp_path, raw)
+    assert status == 4
+    assert_errors(out, "E101_INSUFFICIENT_CASH,2,")
 
 
 def test_max_price_width_is_accepted_and_price_spelling_is_retained(tmp_path):

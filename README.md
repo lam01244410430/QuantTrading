@@ -1,7 +1,7 @@
 # QuantTrading
 
 QuantTrading is an offline Python backtester for local OHLC and target-position
-signals (`ohlc-signal/v2`). It requires Python 3.10 or newer and has no runtime
+signals (`ohlc-signal/v2`, amendment 2.1). It requires Python 3.10 or newer and has no runtime
 dependencies beyond the standard library.
 
 ## Try the demo
@@ -30,7 +30,7 @@ Each completed run replaces this tool's previous outputs in the chosen
 directory and leaves unrelated files alone.
 Both input and output must be local paths. URIs and UNC network paths
 starting with `\\` or `//` are rejected as E103. For a non-local output
-path, the error is printed to stderr only.
+path, the error row `E103_INPUT_NOT_LOCAL,0,out` is printed to stderr only.
 
 Start your UTF-8 CSV (no BOM) with this exact header and include at least two
 bars for one symbol, with unique, increasing UTC bar-open timestamps:
