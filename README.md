@@ -28,6 +28,8 @@ On Windows, use `py -3` in place of `python3`. The three parameter values
 shown are the defaults. Omit `--html` if you only want the contract files.
 Each completed run replaces this tool's previous outputs in the chosen
 directory and leaves unrelated files alone.
+If restoring prior outputs fails after a write error, stderr identifies the
+recovery directory that holds unrestored backups.
 Both input and output must be local paths. URIs and Windows UNC forms are
 rejected as E103, including paths starting with `\\` even if they name a
 Windows drive. On POSIX, `//` can start a local absolute path. For a non-local output

@@ -403,6 +403,33 @@ def test_replace_failure_restores_previous_files_and_removes_new_files(tmp_path,
     assert "test replacement failure" in capsys.readouterr().err
 
 
+def test_publish_and_rollback_failure_retains_unrestored_backups(tmp_path, monkeypatch, capsys):
+    out = tmp_path / "out"
+    out.mkdir()
+    previous = {name: f"old {name}\n".encode() for name in OUTPUT_SHA}
+    for name, content in previous.items():
+        (out / name).write_bytes(content)
+    replace = os.replace
+
+    def fail_twice(source, destination):
+        if source.name == "summary.json" and destination == out / "summary.json":
+            raise PermissionError("test publication fault")
+        if source.name == "equity.csv.previous" and destination == out / "equity.csv":
+            raise PermissionError("test rollback fault")
+        return replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", fail_twice)
+    status, _ = run(tmp_path)
+    assert status == 3
+    recovery, = out.glob(".quanttrading-*")
+    assert (recovery / "equity.csv.previous").read_bytes() == previous["equity.csv"]
+    assert (out / "summary.json").read_bytes() == previous["summary.json"]
+    assert (out / "fills.csv").read_bytes() == previous["fills.csv"]
+    stderr = capsys.readouterr().err
+    assert "test publication fault" in stderr and "test rollback fault" in stderr
+    assert f"recovery files kept at {recovery}" in stderr
+
+
 def test_e101_default_fixture(tmp_path):
     status, out = run(tmp_path, flags=("--starting-capital", "5000.00", "--html"))
     assert status == 4

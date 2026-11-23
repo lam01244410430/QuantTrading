@@ -3,9 +3,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from shutil import rmtree
 import stat
 import sys
-from tempfile import TemporaryDirectory
+from tempfile import mkdtemp
 
 from .constants import (
     DEFAULT_FEE_RATE, DEFAULT_POSITION_SIZE, DEFAULT_STARTING_CAPITAL,
@@ -40,8 +41,9 @@ def _parameter_args(argv):
 
 def _write_outputs(out, outputs):
     out.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(prefix=".quanttrading-", dir=out) as staging:
-        stage = Path(staging)
+    stage = Path(mkdtemp(prefix=".quanttrading-", dir=out))
+    retain_backups = False
+    try:
         existing = []
         for name, content in outputs.items():
             (stage / name).write_bytes(content.encode("utf-8"))
@@ -67,13 +69,25 @@ def _write_outputs(out, outputs):
                 if name in outputs:
                     os.replace(stage / name, destination)
                     changed.setdefault(name, None)
-        except OSError:
+        except OSError as publish_error:
+            rollback_errors = []
             for name, backup in reversed(changed.items()):
-                if backup is not None:
-                    os.replace(backup, out / name)
-                else:
-                    (out / name).unlink()
+                try:
+                    if backup is not None:
+                        os.replace(backup, out / name)
+                    else:
+                        (out / name).unlink()
+                except OSError as rollback_error:
+                    rollback_errors.append(f"{name}: {rollback_error}")
+            if rollback_errors:
+                retain_backups = True
+                details = "; ".join(rollback_errors)
+                raise OSError(f"{publish_error}; rollback failed ({details}); "
+                              f"recovery files kept at {stage}") from publish_error
             raise
+    finally:
+        if not retain_backups:
+            rmtree(stage)
 
 
 def _csv(header, rows):
