@@ -7,8 +7,8 @@ import sys
 
 import pytest
 
+from quanttrading import validation
 from quanttrading.backtest import main
-from quanttrading.validation import is_local_path
 
 ROOT = Path(__file__).resolve().parents[1]
 BASIC = ROOT / "fixtures" / "fixture_v1_basic.csv"
@@ -192,8 +192,11 @@ def test_rejects_uri(tmp_path, path):
     pytest.param(r"\\host\share\x.csv", id="P08"), "//server/share/input.csv",
     r"/\host\share\x.csv", r"\/host/share/x.csv",
     r"\\?\UNC\host\share\x.csv", "//?/UNC/host/share/x.csv",
+    r"\\?\C:\data\x.csv", "//?/C:/data/x.csv",
 ])
-def test_rejects_unc_input(tmp_path, path):
+def test_rejects_unc_input(tmp_path, monkeypatch, path):
+    if path.startswith("//"):
+        monkeypatch.setattr(validation, "OS_NAME", "nt")
     out = tmp_path / "out"
     assert main([path, "--out", str(out)]) == 3
     assert_errors(out, "E103_INPUT_NOT_LOCAL,0,")
@@ -204,6 +207,7 @@ def test_rejects_unc_input(tmp_path, path):
     pytest.param("s3://bucket/out", id="P07"), "//server/share/out",
     r"/\host\share\out", r"\/host/share/out",
     r"\\?\UNC\host\share\out", "//?/UNC/host/share/out",
+    r"\\?\C:\data\out", "//?/C:/data/out",
     "file:///tmp/out", "https://example.com/out", "custom+git.1-://out",
     "file:///output", "https://example.invalid/output", "Z+1.-://host/output",
 ])
@@ -212,6 +216,8 @@ def test_rejects_nonlocal_output_without_filesystem_checks(monkeypatch, capsysbi
         pytest.fail("Non-local output must be rejected before checking or creating paths")
 
     with monkeypatch.context() as patch:
+        if path.startswith("//"):
+            patch.setattr(validation, "OS_NAME", "nt")
         patch.setattr(os.path, "realpath", unexpected_filesystem_call)
         patch.setattr(Path, "mkdir", unexpected_filesystem_call)
         patch.setattr(Path, "read_bytes", unexpected_filesystem_call)
@@ -237,9 +243,11 @@ def test_nonlocal_output_reports_invalid_parameters_first(tmp_path, monkeypatch,
     assert not list(tmp_path.iterdir())
 
 
-@pytest.mark.parametrize("path", [r"\\?\C:\data\x.csv", "//?/C:/data/x.csv"])
-def test_extended_length_windows_drive_is_local(path):
-    assert is_local_path(path)
+@pytest.mark.skipif(os.name != "posix", reason="POSIX absolute path syntax")
+def test_accepts_double_slash_posix_input_and_output(tmp_path):
+    out = tmp_path / "out"
+    assert main(["/" + str(BASIC), "--out", "/" + str(out)]) == 0
+    assert (out / "summary.json").read_bytes() == (EXPECTED / "summary.json").read_bytes()
 
 
 @pytest.mark.parametrize("kind", ["missing", "directory", "unreadable"])
