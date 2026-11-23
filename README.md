@@ -30,7 +30,8 @@ Each completed run replaces this tool's previous outputs in the chosen
 directory and leaves unrelated files alone.
 Both input and output must be local paths. URIs and UNC network paths
 starting with `\\` or `//` are rejected as E103. For a non-local output
-path, the error row `E103_INPUT_NOT_LOCAL,0,out` is printed to stderr only.
+path, the CLI writes no files and prints the `code,row,column` header and
+`E103_INPUT_NOT_LOCAL,0,out` row to stderr.
 
 Start your UTF-8 CSV (no BOM) with this exact header and include at least two
 bars for one symbol, with unique, increasing UTC bar-open timestamps:

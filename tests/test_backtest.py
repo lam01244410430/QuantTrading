@@ -214,15 +214,16 @@ def test_rejects_nonlocal_output_without_filesystem_checks(monkeypatch, capsys, 
     with monkeypatch.context() as patch:
         patch.setattr(os.path, "realpath", unexpected_filesystem_call)
         patch.setattr(Path, "mkdir", unexpected_filesystem_call)
+        patch.setattr(Path, "read_bytes", unexpected_filesystem_call)
         assert main([str(BASIC), "--out", path]) == 3
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert captured.err == "E103_INPUT_NOT_LOCAL,0,out\n"
+    assert captured.err == "code,row,column\nE103_INPUT_NOT_LOCAL,0,out\n"
 
 
-def test_nonlocal_output_keeps_parameter_error_precedence(capsys):
+def test_nonlocal_output_is_rejected_even_when_a_parameter_is_invalid(capsys):
     assert main([str(BASIC), "--out", "s3://bucket/out", "--position-size", "0"]) == 3
-    assert capsys.readouterr().err == "E102_BAD_PARAMETER,0,position_size\n"
+    assert capsys.readouterr().err == "code,row,column\nE103_INPUT_NOT_LOCAL,0,out\n"
 
 
 @pytest.mark.parametrize("path", [r"\\?\C:\data\x.csv", "//?/C:/data/x.csv"])
@@ -378,10 +379,11 @@ def test_cash_can_reach_zero_and_summary_preserves_fee_rate_spelling(tmp_path):
     }
 
 
-def test_p09_capital_is_valid_but_the_default_fill_is_unaffordable(tmp_path):
-    status, out = run(tmp_path, flags=("--starting-capital", "0005005"))
-    assert status == 4
-    assert_errors(out, "E101_INSUFFICIENT_CASH,2,")
+def test_p09_starting_capital_is_quantized_when_fill_is_funded(tmp_path):
+    status, out = run(tmp_path, flags=("--starting-capital", "0005005", "--position-size", "49"))
+    assert status == 0
+    summary = json.loads((out / "summary.json").read_bytes())
+    assert summary["parameters"]["starting_capital"] == "5005.00"
 
 
 def test_summary_formats_starting_capital_with_two_decimal_places(tmp_path):
@@ -391,13 +393,14 @@ def test_summary_formats_starting_capital_with_two_decimal_places(tmp_path):
     assert summary["parameters"]["starting_capital"] == "5000.00"
 
 
-def test_p05_max_width_open_passes_data_validation(tmp_path):
+def test_p05_max_width_open_passes_validation_and_can_run_without_buying_that_open(tmp_path):
     largest = "999999999999.99999999"
     raw = edit((2, 2, largest), (2, 3, largest))
     assert validate(raw)[1].open_text == largest
-    status, out = run(tmp_path, raw)
-    assert status == 4
-    assert_errors(out, "E101_INSUFFICIENT_CASH,2,")
+    status, out = run(tmp_path, edit((1, 7, "0"), raw=raw), flags=("--position-size", "1"))
+    assert status == 0
+    fills = (out / "fills.csv").read_bytes().splitlines()[1:]
+    assert fills[0].split(b",")[2:6] == [b"2026-01-07T00:00:00Z", b"BUY", b"1", b"102.00"]
 
 
 def test_max_price_width_is_accepted_and_price_spelling_is_retained(tmp_path):
