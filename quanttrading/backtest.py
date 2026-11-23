@@ -17,6 +17,25 @@ from .report import render_report
 from .validation import Rejected, is_local_input, is_unc, parameters, read_input, validate
 
 OUTPUT_NAMES = ("fills.csv", "equity.csv", "summary.json", "errors.csv", "report.html")
+PARAMETER_DEFAULTS = {
+    "--starting-capital": DEFAULT_STARTING_CAPITAL,
+    "--position-size": DEFAULT_POSITION_SIZE,
+    "--fee-rate": DEFAULT_FEE_RATE,
+}
+
+
+def _parameter_args(argv):
+    arguments = iter(argv)
+    for argument in arguments:
+        if argument == "--":
+            yield argument
+            yield from arguments
+            break
+        if argument in PARAMETER_DEFAULTS:
+            value = next(arguments, None)
+            if value is not None:
+                argument = f"{argument}={value}"
+        yield argument
 
 
 def _write_outputs(out, outputs):
@@ -76,11 +95,10 @@ def main(argv=None):
                                      allow_abbrev=False)
     parser.add_argument("input", help="local OHLC+signal CSV path")
     parser.add_argument("--out", required=True, help="output directory")
-    parser.add_argument("--starting-capital", default=DEFAULT_STARTING_CAPITAL)
-    parser.add_argument("--position-size", default=DEFAULT_POSITION_SIZE)
-    parser.add_argument("--fee-rate", default=DEFAULT_FEE_RATE)
+    for flag, default in PARAMETER_DEFAULTS.items():
+        parser.add_argument(flag, default=default)
     parser.add_argument("--html", action="store_true", help="also write a standalone report.html")
-    args = parser.parse_args(argv)
+    args = parser.parse_args(_parameter_args(sys.argv[1:] if argv is None else argv))
 
     if is_unc(args.out):
         print("Output directory must be local; UNC paths are not supported.", file=sys.stderr)

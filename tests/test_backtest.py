@@ -168,6 +168,14 @@ def test_parameter_order_and_precedence(tmp_path):
                   "E102_BAD_PARAMETER,0,position_size", "E102_BAD_PARAMETER,0,fee_rate")
 
 
+@pytest.mark.parametrize("fee_flags", [("--fee-rate", "-1e-3"), ("--fee-rate=-1e-3",)])
+def test_parameter_that_looks_like_a_flag_is_validated(tmp_path, fee_flags):
+    status, out = run(tmp_path, flags=(*fee_flags, "--starting-capital", "0"))
+    assert status == 3
+    assert_errors(out, "E102_BAD_PARAMETER,0,starting_capital",
+                  "E102_BAD_PARAMETER,0,fee_rate")
+
+
 @pytest.mark.parametrize("path", [
     pytest.param("https://example.com/x.csv", id="P03"),
     "http://example.com/x.csv", "s3://test/x.csv", "gs://test/x.csv",
