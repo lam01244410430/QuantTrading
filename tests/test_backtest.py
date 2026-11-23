@@ -371,6 +371,21 @@ def test_first_peak_and_first_trough_win_ties(tmp_path):
     assert summary["final_position_units"] == "50"
 
 
+def test_distinct_drawdowns_that_round_to_same_decimal_choose_larger_ratio(tmp_path):
+    closes = ("1", "900000000000.00000001", "450000000000.00000001",
+              "900000000000.00000003", "450000000000.00000002")
+    changes = [(row, column, value) for row, close in enumerate(closes, 1)
+               for column, value in ((2, "1"), (3, close), (4, "1"), (5, close), (7, "1"))]
+    raw = b"\n".join(edit(*changes).split(b"\n")[:6])
+    status, out = run(tmp_path, raw, flags=("--starting-capital", "1", "--position-size", "1",
+                                           "--fee-rate", "0"))
+    assert status == 0
+    summary = json.loads((out / "summary.json").read_bytes())
+    assert summary["max_drawdown"] == "0.500000"
+    assert summary["max_drawdown_peak_timestamp"] == "2026-01-08T00:00:00Z"
+    assert summary["max_drawdown_trough_timestamp"] == "2026-01-09T00:00:00Z"
+
+
 def test_initial_capital_peak_has_no_timestamp(tmp_path):
     raw = edit((2, 5, "100.10"), (3, 5, "100.10"), (4, 5, "101.00"))
     status, out = run(tmp_path, raw)

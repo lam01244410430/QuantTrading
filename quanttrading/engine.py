@@ -1,4 +1,5 @@
 from decimal import Context, Decimal, DivisionByZero, InvalidOperation, Overflow, ROUND_HALF_UP, localcontext
+from fractions import Fraction
 
 from .constants import CONTRACT_ID, DISCLAIMER
 from .validation import Issue, Rejected
@@ -25,6 +26,7 @@ def simulate(bars, params, input_file, input_sha256):
 def _simulate(bars, params, input_file, input_sha256):
     cash = peak = params.starting_capital
     total_fees = max_drawdown = Decimal(0)
+    max_drawdown_ratio = Fraction(0)
     peak_timestamp = max_peak = max_trough = ""
     position = 0
     previous = None
@@ -54,9 +56,12 @@ def _simulate(bars, params, input_file, input_sha256):
             peak = equity
             peak_timestamp = bar.timestamp
         drawdown = (peak - equity) / peak
-        if drawdown > max_drawdown:
-            max_drawdown = drawdown
-            max_peak, max_trough = peak_timestamp, bar.timestamp
+        if equity < peak:
+            ratio = 1 - Fraction(equity) / Fraction(peak)
+            if ratio > max_drawdown_ratio:
+                max_drawdown_ratio = ratio
+                max_drawdown = drawdown
+                max_peak, max_trough = peak_timestamp, bar.timestamp
         equity_rows.append((bar.timestamp, _money(cash), str(position), bar.close_text,
                             _money(equity), _money(peak), _drawdown(drawdown)))
         previous = bar
