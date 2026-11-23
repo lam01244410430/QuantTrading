@@ -283,6 +283,17 @@ def test_refuses_output_named_like_input(tmp_path, capsys, name):
     ((), "E104_INPUT_UNREADABLE,0,"),
     (("--starting-capital", "0"), "E102_BAD_PARAMETER,0,starting_capital"),
 ])
+def test_missing_input_named_like_output_is_not_an_alias(tmp_path, flags, error):
+    out = tmp_path / "out"
+    source = out / "fills.csv"
+    assert main([str(source), "--out", str(out), *flags]) == 3
+    assert_errors(out, error)
+
+
+@pytest.mark.parametrize(("flags", "error"), [
+    ((), "E104_INPUT_UNREADABLE,0,"),
+    (("--starting-capital", "0"), "E102_BAD_PARAMETER,0,starting_capital"),
+])
 def test_inaccessible_input_does_not_mask_expected_error(tmp_path, monkeypatch, flags, error):
     source = tmp_path / "inaccessible" / "input.csv"
     out = tmp_path / "out"

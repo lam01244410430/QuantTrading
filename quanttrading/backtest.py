@@ -88,23 +88,22 @@ def _input_alias(input_path, out):
         return None
     source = Path(input_path)
     try:
+        source_stat = source.stat()
+    except OSError:
+        return None
+    try:
         resolved = os.path.normcase(os.path.realpath(source))
     except OSError:
         resolved = None
-    try:
-        source_stat = source.stat()
-    except OSError:
-        source_stat = None
     for name in OUTPUT_NAMES:
         destination = out / name
         if resolved is not None and os.path.normcase(os.path.realpath(destination)) == resolved:
             return name
-        if source_stat is not None:
-            try:
-                if os.path.samestat(source_stat, destination.stat()):
-                    return name
-            except (FileNotFoundError, NotADirectoryError):
-                continue
+        try:
+            if os.path.samestat(source_stat, destination.stat()):
+                return name
+        except (FileNotFoundError, NotADirectoryError):
+            continue
     return None
 
 
