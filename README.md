@@ -1,8 +1,8 @@
 # QuantTrading
 
 QuantTrading is an offline Python backtester for local OHLC and target-position
-signals (`ohlc-signal/v2`, amendment 2.1). It requires Python 3.10 or newer and has no runtime
-dependencies beyond the standard library.
+signals (`ohlc-signal/v2`, amendment 2.1.1). It requires Python 3.10 or newer and
+has no runtime dependencies beyond the standard library.
 
 ## Try the demo
 

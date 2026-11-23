@@ -115,7 +115,8 @@ def main(argv=None):
     args = parser.parse_args(_parameter_args(sys.argv[1:] if argv is None else argv))
 
     if not is_local_path(args.out):
-        sys.stderr.write(_csv(ERROR_COLUMNS, (("E103_INPUT_NOT_LOCAL", "0", "out"),)))
+        error = _csv(ERROR_COLUMNS, (("E103_INPUT_NOT_LOCAL", "0", "out"),))
+        sys.stderr.buffer.write(error.encode("utf-8"))
         return 3
 
     try:

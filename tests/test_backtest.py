@@ -8,7 +8,7 @@ import sys
 import pytest
 
 from quanttrading.backtest import main
-from quanttrading.validation import is_local_path, validate
+from quanttrading.validation import is_local_path
 
 ROOT = Path(__file__).resolve().parents[1]
 BASIC = ROOT / "fixtures" / "fixture_v1_basic.csv"
@@ -207,7 +207,7 @@ def test_rejects_unc_input(tmp_path, path):
     "file:///tmp/out", "https://example.com/out", "custom+git.1-://out",
     "file:///output", "https://example.invalid/output", "Z+1.-://host/output",
 ])
-def test_rejects_nonlocal_output_without_filesystem_checks(monkeypatch, capsys, path):
+def test_rejects_nonlocal_output_without_filesystem_checks(monkeypatch, capsysbinary, path):
     def unexpected_filesystem_call(*args, **kwargs):
         pytest.fail("Non-local output must be rejected before checking or creating paths")
 
@@ -216,9 +216,9 @@ def test_rejects_nonlocal_output_without_filesystem_checks(monkeypatch, capsys, 
         patch.setattr(Path, "mkdir", unexpected_filesystem_call)
         patch.setattr(Path, "read_bytes", unexpected_filesystem_call)
         assert main([str(BASIC), "--out", path]) == 3
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert captured.err == "code,row,column\nE103_INPUT_NOT_LOCAL,0,out\n"
+    captured = capsysbinary.readouterr()
+    assert captured.out == b""
+    assert captured.err == b"code,row,column\nE103_INPUT_NOT_LOCAL,0,out\n"
 
 
 def test_nonlocal_output_is_rejected_even_when_a_parameter_is_invalid(capsys):
@@ -379,11 +379,18 @@ def test_cash_can_reach_zero_and_summary_preserves_fee_rate_spelling(tmp_path):
     }
 
 
-def test_p09_starting_capital_is_quantized_when_fill_is_funded(tmp_path):
-    status, out = run(tmp_path, flags=("--starting-capital", "0005005", "--position-size", "49"))
+def test_p09_starting_capital_is_quantized_without_changing_golden_output(tmp_path):
+    flags = ("--position-size", "50", "--fee-rate", "0.001")
+    status, out = run(tmp_path, flags=("--starting-capital", "0010000", *flags))
     assert status == 0
-    summary = json.loads((out / "summary.json").read_bytes())
-    assert summary["parameters"]["starting_capital"] == "5005.00"
+    for name, checksum in OUTPUT_SHA.items():
+        actual = (out / name).read_bytes()
+        assert actual == (EXPECTED / name).read_bytes()
+        assert sha(actual) == checksum
+
+    status, out = run(tmp_path / "unfunded", flags=("--starting-capital", "0005005", *flags))
+    assert status == 4
+    assert_errors(out, "E101_INSUFFICIENT_CASH,2,")
 
 
 def test_summary_formats_starting_capital_with_two_decimal_places(tmp_path):
@@ -393,14 +400,20 @@ def test_summary_formats_starting_capital_with_two_decimal_places(tmp_path):
     assert summary["parameters"]["starting_capital"] == "5000.00"
 
 
-def test_p05_max_width_open_passes_validation_and_can_run_without_buying_that_open(tmp_path):
-    largest = "999999999999.99999999"
-    raw = edit((2, 2, largest), (2, 3, largest))
-    assert validate(raw)[1].open_text == largest
-    status, out = run(tmp_path, edit((1, 7, "0"), raw=raw), flags=("--position-size", "1"))
+def test_p05_max_width_high_does_not_change_fills_or_equity(tmp_path):
+    raw = edit((3, 3, "999999999999.99999999"))
+    checksum = "751f766c62bbed2c7aa9f0ff5f3c45575ff382ace98807fe6b135d8e50fb79eb"
+    assert sha(raw) == checksum
+    filename = "p05.csv"
+    flags = ("--starting-capital", "10000.00", "--position-size", "50", "--fee-rate", "0.001")
+    status, out = run(tmp_path, raw, flags=flags, filename=filename)
     assert status == 0
-    fills = (out / "fills.csv").read_bytes().splitlines()[1:]
-    assert fills[0].split(b",")[2:6] == [b"2026-01-07T00:00:00Z", b"BUY", b"1", b"102.00"]
+    for name in OUTPUT_SHA:
+        expected = (EXPECTED / name).read_bytes()
+        if name == "summary.json":
+            expected = expected.replace(INPUT_SHA.encode(), checksum.encode())
+            expected = expected.replace(BASIC.name.encode(), filename.encode())
+        assert (out / name).read_bytes() == expected
 
 
 def test_max_price_width_is_accepted_and_price_spelling_is_retained(tmp_path):
