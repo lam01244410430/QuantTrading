@@ -337,6 +337,28 @@ def test_refuses_output_link_to_input_on_failure(tmp_path, capsys, kind):
     assert "Output errors.csv aliases the input file" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("name", ["fills.csv", "errors.csv", "input.csv"])
+def test_dangling_input_symlink_is_preserved(tmp_path, capsys, name):
+    out = tmp_path / "out"
+    out.mkdir()
+    managed = name != "input.csv"
+    source = (out if managed else tmp_path) / name
+    target = Path("missing.csv")
+    try:
+        source.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symbolic links not supported: {exc}")
+
+    assert main([str(source), "--out", str(out)]) == 3
+    assert source.is_symlink()
+    assert source.readlink() == target
+    if managed:
+        assert list(out.iterdir()) == [source]
+        assert f"Output {name} aliases the input file" in capsys.readouterr().err
+    else:
+        assert_errors(out, "E104_INPUT_UNREADABLE,0,")
+
+
 @pytest.mark.parametrize(("raw", "blocked"), [(RAW, "summary.json"), (b"", "errors.csv")])
 def test_output_directory_collision_leaves_no_partial_files(tmp_path, capsys, raw, blocked):
     out = tmp_path / "out"

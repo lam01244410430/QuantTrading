@@ -117,20 +117,29 @@ def _input_alias(input_path, out):
     if not is_local_path(input_path):
         return None
     source = Path(input_path)
+    follow_symlinks = True
     try:
         source_stat = source.stat()
     except OSError:
-        return None
-    try:
-        resolved = os.path.normcase(os.path.realpath(source))
-    except OSError:
-        resolved = None
+        try:
+            source_stat = source.lstat()
+        except OSError:
+            return None
+        if not stat.S_ISLNK(source_stat.st_mode):
+            return None
+        follow_symlinks = False
+    resolved = None
+    if follow_symlinks:
+        try:
+            resolved = os.path.normcase(os.path.realpath(source))
+        except OSError:
+            pass
     for name in OUTPUT_NAMES:
         destination = out / name
         if resolved is not None and os.path.normcase(os.path.realpath(destination)) == resolved:
             return name
         try:
-            if os.path.samestat(source_stat, destination.stat()):
+            if os.path.samestat(source_stat, destination.stat(follow_symlinks=follow_symlinks)):
                 return name
         except (FileNotFoundError, NotADirectoryError):
             continue
