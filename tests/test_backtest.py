@@ -422,7 +422,7 @@ def test_no_fills_has_constant_equity_and_no_drawdown(tmp_path):
     assert "No simulated fills." in (out / "report.html").read_text(encoding="utf-8")
 
 
-def test_deterministic_between_cli_processes(tmp_path):
+def run_cli(source, out, seed, locale, *flags):
     runner = """
 import runpy, socket
 def blocked(*args, **kwargs):
@@ -430,14 +430,30 @@ def blocked(*args, **kwargs):
 socket.socket = socket.create_connection = socket.getaddrinfo = blocked
 runpy.run_module("quanttrading.backtest", run_name="__main__", alter_sys=True)
 """
+    env = {**os.environ, "PYTHONHASHSEED": seed, "LC_ALL": locale, "PYTHONUTF8": "0"}
+    result = subprocess.run(
+        [sys.executable, "-c", runner, str(source), "--out", str(out), *flags],
+        cwd=ROOT, env=env, capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+
+
+def test_deterministic_between_cli_processes(tmp_path):
     runs = []
     for seed, locale in (("1", "C"), ("1337", "en_US.UTF-8")):
         out = tmp_path / seed
-        env = {**os.environ, "PYTHONHASHSEED": seed, "LC_ALL": locale, "PYTHONUTF8": "0"}
-        result = subprocess.run(
-            [sys.executable, "-c", runner, str(BASIC), "--out", str(out), "--html"],
-            cwd=ROOT, env=env, capture_output=True,
-        )
-        assert result.returncode == 0, result.stderr.decode(errors="replace")
+        run_cli(BASIC, out, seed, locale, "--html")
         runs.append({path.name: sha(path.read_bytes()) for path in out.iterdir()})
     assert runs[0] == runs[1]
+
+
+def test_non_ascii_basename_has_identical_summary_bytes_across_locales(tmp_path):
+    source = tmp_path / "SYNTH-é.csv"
+    source.write_bytes(RAW)
+    runs = []
+    for locale in ("C", "en_US.UTF-8"):
+        out = tmp_path / locale
+        run_cli(source, out, "1", locale)
+        runs.append((out / "summary.json").read_bytes())
+    assert runs[0] == runs[1]
+    assert b'"input_file": "SYNTH-\\u00e9.csv"' in runs[0]

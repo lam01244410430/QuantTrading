@@ -123,8 +123,9 @@ def main(argv=None):
         params = parameters(args.starting_capital, args.position_size, args.fee_rate)
         raw = read_input(args.input)
         bars = validate(raw)
+        basename = os.fsencode(Path(args.input).name).decode("utf-8", errors="backslashreplace")
         fills, equity, summary = simulate(
-            bars, params, Path(args.input).name, hashlib.sha256(raw).hexdigest()
+            bars, params, basename, hashlib.sha256(raw).hexdigest()
         )
     except Rejected as exc:
         status = exc.exit_code

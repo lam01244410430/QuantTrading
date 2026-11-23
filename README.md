@@ -48,7 +48,9 @@ Success writes `fills.csv`, `equity.csv`, and `summary.json` (exit 0), plus the
 optional HTML report. Failure writes only `errors.csv` for that invocation:
 exit 2 for CSV validation, 3 for invalid parameters or paths, and 4 if a buy
 cannot be funded. The summary records the contract version, parameters, and
-the SHA-256 of the original input bytes.
+the SHA-256 of the original input bytes. It records the input basename only:
+filename bytes are decoded as UTF-8 regardless of locale, with invalid bytes
+shown as `\xNN` escapes.
 
 **Simulated backtest on synthetic or local data. Not trading or investment
 advice. No orders were placed.** The backtester uses no network data,
