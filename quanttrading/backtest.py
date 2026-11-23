@@ -3,7 +3,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from shutil import copy2
 import stat
 import sys
 from tempfile import TemporaryDirectory
@@ -43,7 +42,7 @@ def _write_outputs(out, outputs):
     out.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix=".quanttrading-", dir=out) as staging:
         stage = Path(staging)
-        backups = {}
+        existing = []
         for name, content in outputs.items():
             (stage / name).write_bytes(content.encode("utf-8"))
         for name in OUTPUT_NAMES:
@@ -54,22 +53,24 @@ def _write_outputs(out, outputs):
                 continue
             if not (stat.S_ISREG(mode) or stat.S_ISLNK(mode)):
                 raise OSError(f"Output path is not a regular file: {destination}")
-            backups[name] = stage / (name + ".previous")
-            copy2(destination, backups[name], follow_symlinks=False)
+            existing.append(name)
 
-        changed = []
+        stale = [name for name in existing if name not in outputs]
+        changed = {}
         try:
-            for name in outputs:
-                os.replace(stage / name, out / name)
-                changed.append(name)
-            for name in backups:
-                if name not in outputs:
-                    (out / name).unlink()
-                    changed.append(name)
+            for name in (*outputs, *stale):
+                destination = out / name
+                if name in existing:
+                    backup = stage / (name + ".previous")
+                    os.replace(destination, backup)
+                    changed[name] = backup
+                if name in outputs:
+                    os.replace(stage / name, destination)
+                    changed.setdefault(name, None)
         except OSError:
-            for name in reversed(changed):
-                if name in backups:
-                    os.replace(backups[name], out / name)
+            for name, backup in reversed(changed.items()):
+                if backup is not None:
+                    os.replace(backup, out / name)
                 else:
                     (out / name).unlink()
             raise

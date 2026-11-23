@@ -347,6 +347,23 @@ def test_output_directory_collision_leaves_no_partial_files(tmp_path, capsys, ra
     assert "Cannot write backtest output" in capsys.readouterr().err
 
 
+@pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0,
+                    reason="requires non-root POSIX permissions")
+def test_replaces_write_only_existing_output(tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    fills = out / "fills.csv"
+    fills.write_bytes(b"stale fills\n")
+    fills.chmod(0o200)
+    with pytest.raises(PermissionError):
+        fills.read_bytes()
+
+    status, _ = run(tmp_path)
+    assert status == 0
+    assert fills.read_bytes() == (EXPECTED / "fills.csv").read_bytes()
+    assert {path.name for path in out.iterdir()} == OUTPUT_SHA.keys()
+
+
 def test_reused_directory_contains_only_current_managed_outputs(tmp_path):
     out = tmp_path / "out"
     out.mkdir()
