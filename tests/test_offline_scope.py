@@ -5,6 +5,11 @@ import sys
 
 import pytest
 
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
+
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = tuple(sorted((ROOT / "quanttrading").rglob("*.py")))
 NETWORK_IMPORTS = {
@@ -67,3 +72,11 @@ def test_synthetic_provenance_and_no_dotenv():
     assert "synthetic `SYNTH` data" in (ROOT / "README.md").read_text(encoding="utf-8")
     for directory in (ROOT, ROOT / "quanttrading", ROOT / "fixtures", ROOT / "tests"):
         assert not list(directory.glob(".env*"))
+
+
+def test_build_backend_is_pinned_and_runtime_has_no_dependencies():
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert project["build-system"]["build-backend"] == "setuptools.build_meta"
+    setuptools, = project["build-system"]["requires"]
+    assert re.fullmatch(r"setuptools==[0-9]+\.[0-9]+\.[0-9]+", setuptools)
+    assert project["project"]["dependencies"] == []
