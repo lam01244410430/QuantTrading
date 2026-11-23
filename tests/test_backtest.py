@@ -221,9 +221,20 @@ def test_rejects_nonlocal_output_without_filesystem_checks(monkeypatch, capsysbi
     assert captured.err == b"code,row,column\nE103_INPUT_NOT_LOCAL,0,out\n"
 
 
-def test_nonlocal_output_is_rejected_even_when_a_parameter_is_invalid(capsys):
-    assert main([str(BASIC), "--out", "s3://bucket/out", "--position-size", "0"]) == 3
-    assert capsys.readouterr().err == "code,row,column\nE103_INPUT_NOT_LOCAL,0,out\n"
+def test_nonlocal_output_reports_invalid_parameters_first(tmp_path, monkeypatch, capsysbinary):
+    monkeypatch.chdir(tmp_path)
+    assert main([str(BASIC), "--out", "s3://bucket/out", "--fee-rate", "-1e-3",
+                 "--position-size", "0", "--starting-capital", "0"]) == 3
+    captured = capsysbinary.readouterr()
+    assert captured.out == b""
+    assert captured.err == (
+        b"code,row,column\n"
+        b"E102_BAD_PARAMETER,0,starting_capital\n"
+        b"E102_BAD_PARAMETER,0,position_size\n"
+        b"E102_BAD_PARAMETER,0,fee_rate\n"
+        b"E103_INPUT_NOT_LOCAL,0,out\n"
+    )
+    assert not list(tmp_path.iterdir())
 
 
 @pytest.mark.parametrize("path", [r"\\?\C:\data\x.csv", "//?/C:/data/x.csv"])
