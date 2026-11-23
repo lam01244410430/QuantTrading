@@ -229,6 +229,35 @@ def test_refuses_output_link_to_input_on_failure(tmp_path, capsys, kind):
     assert "Output errors.csv aliases the input file" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(("raw", "blocked"), [(RAW, "summary.json"), (b"", "errors.csv")])
+def test_output_directory_collision_leaves_no_partial_files(tmp_path, capsys, raw, blocked):
+    out = tmp_path / "out"
+    (out / blocked).mkdir(parents=True)
+    status, _ = run(tmp_path, raw)
+    assert status == 3
+    assert {path.name for path in out.iterdir()} == {blocked}
+    assert "Cannot write backtest output" in capsys.readouterr().err
+
+
+def test_replace_failure_restores_previous_files_and_removes_new_files(tmp_path, monkeypatch, capsys):
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "fills.csv").write_bytes(b"previous fills\n")
+    replace = os.replace
+
+    def fail_on_summary(source, destination):
+        if destination == out / "summary.json":
+            raise PermissionError("test replacement failure")
+        return replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", fail_on_summary)
+    status, _ = run(tmp_path)
+    assert status == 3
+    assert {path.name for path in out.iterdir()} == {"fills.csv"}
+    assert (out / "fills.csv").read_bytes() == b"previous fills\n"
+    assert "test replacement failure" in capsys.readouterr().err
+
+
 def test_e101_default_fixture(tmp_path):
     status, out = run(tmp_path, flags=("--starting-capital", "5000.00", "--html"))
     assert status == 4

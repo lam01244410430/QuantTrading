@@ -3,7 +3,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from shutil import copy2
+import stat
 import sys
+from tempfile import TemporaryDirectory
 
 from .constants import (
     DEFAULT_FEE_RATE, DEFAULT_POSITION_SIZE, DEFAULT_STARTING_CAPITAL,
@@ -16,8 +19,35 @@ from .validation import URI, Rejected, parameters, read_input, validate
 OUTPUT_NAMES = ("fills.csv", "equity.csv", "summary.json", "errors.csv", "report.html")
 
 
-def _write(path, content):
-    path.write_bytes(content.encode("utf-8"))
+def _write_outputs(out, outputs):
+    out.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix=".quanttrading-", dir=out) as staging:
+        stage = Path(staging)
+        backups = {}
+        for name, content in outputs.items():
+            (stage / name).write_bytes(content.encode("utf-8"))
+            destination = out / name
+            try:
+                mode = destination.lstat().st_mode
+            except FileNotFoundError:
+                continue
+            if not (stat.S_ISREG(mode) or stat.S_ISLNK(mode)):
+                raise OSError(f"Output path is not a regular file: {destination}")
+            backups[name] = stage / (name + ".previous")
+            copy2(destination, backups[name], follow_symlinks=False)
+
+        published = []
+        try:
+            for name in outputs:
+                os.replace(stage / name, out / name)
+                published.append(name)
+        except OSError:
+            for name in reversed(published):
+                if name in backups:
+                    os.replace(backups[name], out / name)
+                else:
+                    (out / name).unlink()
+            raise
 
 
 def _csv(header, rows):
@@ -69,20 +99,27 @@ def main(argv=None):
             bars, params, Path(args.input).name, hashlib.sha256(raw).hexdigest()
         )
     except Rejected as exc:
-        args.out.mkdir(parents=True, exist_ok=True)
-        _write(args.out / "errors.csv", _csv(
+        status = exc.exit_code
+        outputs = {"errors.csv": _csv(
             ("code", "row", "column"),
             ((issue.code, str(issue.row), issue.column) for issue in exc.issues),
-        ))
-        return exc.exit_code
+        )}
+    else:
+        status = 0
+        outputs = {
+            "fills.csv": _csv(FILL_COLUMNS, fills),
+            "equity.csv": _csv(EQUITY_COLUMNS, equity),
+            "summary.json": json.dumps(summary, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
+        }
+        if args.html:
+            outputs["report.html"] = render_report(summary, fills, equity)
 
-    args.out.mkdir(parents=True, exist_ok=True)
-    _write(args.out / "fills.csv", _csv(FILL_COLUMNS, fills))
-    _write(args.out / "equity.csv", _csv(EQUITY_COLUMNS, equity))
-    _write(args.out / "summary.json", json.dumps(summary, indent=2, sort_keys=True, ensure_ascii=True) + "\n")
-    if args.html:
-        _write(args.out / "report.html", render_report(summary, fills, equity))
-    return 0
+    try:
+        _write_outputs(args.out, outputs)
+    except OSError as exc:
+        print(f"Cannot write backtest output: {exc}", file=sys.stderr)
+        return 3
+    return status
 
 
 if __name__ == "__main__":
