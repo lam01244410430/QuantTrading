@@ -259,7 +259,11 @@ def test_refuses_output_named_like_input(tmp_path, capsys, name):
     assert f"Output {name} aliases the input file" in capsys.readouterr().err
 
 
-def test_inaccessible_input_yields_e104_even_when_alias_inspection_fails(tmp_path, monkeypatch):
+@pytest.mark.parametrize(("flags", "error"), [
+    ((), "E104_INPUT_UNREADABLE,0,"),
+    (("--starting-capital", "0"), "E102_BAD_PARAMETER,0,starting_capital"),
+])
+def test_inaccessible_input_does_not_mask_expected_error(tmp_path, monkeypatch, flags, error):
     source = tmp_path / "inaccessible" / "input.csv"
     out = tmp_path / "out"
     realpath, stat = os.path.realpath, Path.stat
@@ -277,8 +281,8 @@ def test_inaccessible_input_yields_e104_even_when_alias_inspection_fails(tmp_pat
     with monkeypatch.context() as patch:
         patch.setattr(os.path, "realpath", deny_input_resolution)
         patch.setattr(Path, "stat", deny_input_stat)
-        assert main([str(source), "--out", str(out)]) == 3
-    assert_errors(out, "E104_INPUT_UNREADABLE,0,")
+        assert main([str(source), "--out", str(out), *flags]) == 3
+    assert_errors(out, error)
 
 
 @pytest.mark.parametrize("kind", ["hard", "symbolic"])
