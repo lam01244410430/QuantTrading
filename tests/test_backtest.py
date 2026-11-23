@@ -506,6 +506,36 @@ def test_cleanup_retries_readonly_backup_after_publishing(tmp_path, monkeypatch)
     assert {path.name for path in out.iterdir()} == OUTPUT_SHA.keys() | {"report.html"}
 
 
+@pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0,
+                    reason="requires non-root POSIX directory permissions")
+def test_cleanup_leaves_readonly_hard_link_permissions_unchanged(tmp_path, monkeypatch, capsys):
+    outside = tmp_path / "outside.html"
+    outside.write_bytes(b"outside file\n")
+    outside.chmod(0o400)
+    out = tmp_path / "out"
+    out.mkdir()
+    report = out / "report.html"
+    report.hardlink_to(outside)
+    rmtree = backtest.rmtree
+
+    def block_cleanup(stage, *, onerror):
+        stage.chmod(0o500)
+        try:
+            rmtree(stage, onerror=onerror)
+        finally:
+            stage.chmod(0o700)
+
+    monkeypatch.setattr(backtest, "rmtree", block_cleanup)
+    status, _ = run(tmp_path, flags=("--html",))
+    assert status == 0
+    assert report.read_bytes().startswith(b"<!doctype html>")
+    stage, = out.glob(".quanttrading-*")
+    assert (stage / "report.html.previous").samefile(outside)
+    assert stat.S_IMODE(outside.stat().st_mode) == 0o400
+    assert outside.read_bytes() == b"outside file\n"
+    assert f"Warning: could not remove output staging directory {stage}" in capsys.readouterr().err
+
+
 def test_cleanup_failure_does_not_turn_success_into_write_error(tmp_path, monkeypatch, capsys):
     def cleanup_failure(stage, *, onerror):
         raise PermissionError("simulated unrecoverable cleanup failure")

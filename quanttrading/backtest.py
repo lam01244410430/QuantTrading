@@ -43,8 +43,9 @@ def _retry_readonly_cleanup(remove, path, exc_info):
     error = exc_info[1]
     if not isinstance(error, PermissionError):
         raise error
-    mode = os.lstat(path).st_mode
-    if not stat.S_ISREG(mode) or mode & stat.S_IWUSR:
+    entry = os.lstat(path)
+    mode = entry.st_mode
+    if entry.st_nlink > 1 or not stat.S_ISREG(mode) or mode & stat.S_IWUSR:
         raise error
     os.chmod(path, stat.S_IMODE(mode) | stat.S_IWUSR)
     remove(path)
