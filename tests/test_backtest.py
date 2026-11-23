@@ -249,6 +249,28 @@ def test_refuses_output_named_like_input(tmp_path, capsys, name):
     assert f"Output {name} aliases the input file" in capsys.readouterr().err
 
 
+def test_inaccessible_input_yields_e104_even_when_alias_inspection_fails(tmp_path, monkeypatch):
+    source = tmp_path / "inaccessible" / "input.csv"
+    out = tmp_path / "out"
+    realpath, stat = os.path.realpath, Path.stat
+
+    def deny_input_resolution(path, *args, **kwargs):
+        if Path(path) == source:
+            raise PermissionError("input directory is not traversable")
+        return realpath(path, *args, **kwargs)
+
+    def deny_input_stat(path, *args, **kwargs):
+        if path == source:
+            raise PermissionError("input directory is not traversable")
+        return stat(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os.path, "realpath", deny_input_resolution)
+        patch.setattr(Path, "stat", deny_input_stat)
+        assert main([str(source), "--out", str(out)]) == 3
+    assert_errors(out, "E104_INPUT_UNREADABLE,0,")
+
+
 @pytest.mark.parametrize("kind", ["hard", "symbolic"])
 def test_refuses_output_link_to_input_on_failure(tmp_path, capsys, kind):
     source = tmp_path / "invalid.csv"

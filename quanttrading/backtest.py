@@ -82,16 +82,24 @@ def _input_alias(input_path, out):
     if not is_local_path(input_path):
         return None
     source = Path(input_path)
-    resolved = os.path.normcase(os.path.realpath(source))
+    try:
+        resolved = os.path.normcase(os.path.realpath(source))
+    except OSError:
+        resolved = None
+    try:
+        source_stat = source.stat()
+    except OSError:
+        source_stat = None
     for name in OUTPUT_NAMES:
         destination = out / name
-        if os.path.normcase(os.path.realpath(destination)) == resolved:
+        if resolved is not None and os.path.normcase(os.path.realpath(destination)) == resolved:
             return name
-        try:
-            if source.samefile(destination):
-                return name
-        except (FileNotFoundError, NotADirectoryError):
-            continue
+        if source_stat is not None:
+            try:
+                if os.path.samestat(source_stat, destination.stat()):
+                    return name
+            except (FileNotFoundError, NotADirectoryError):
+                continue
     return None
 
 
