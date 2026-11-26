@@ -57,6 +57,13 @@ private. Validate backups/restore, isolation, secret rotation, resource
 limits, monitoring and network latency before rollout. No deploy or VPS
 purchase without owner provisioning and approval.
 
+Before any non-loopback exposure, implement and test a login throttle that
+returns `429` and document that response in the API contract. Scrypt
+(`n=2^15`) uses about 32 MB per attempt in the threadpool, so unthrottled
+logins can exhaust memory and CPU. Key the throttle on the connection peer
+address or a header set only by a trusted proxy; never trust client-supplied
+`X-Forwarded-For`.
+
 Paper first. Exchange testnet is a separate explicitly authorized stage;
 only after verification and explicit owner approval could a separate
 production live gate be designed and enabled. Keep live disabled by
