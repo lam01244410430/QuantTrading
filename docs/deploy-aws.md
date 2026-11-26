@@ -42,9 +42,8 @@ Provision the following in **`ap-northeast-1` (Tokyo) or `ap-southeast-1`
 (Singapore)** — Binance.com and Bybit block US-region IPs, so the
 exchange-facing host must not be deployed in US regions:
 
-1. **EC2 instance:** Ubuntu 24.04 LTS (`t3.medium` minimum; `t3.large` when
-   additional workers are added later) with an **encrypted gp3 EBS volume**
-   (30+ GB, KMS-encrypted).
+1. **EC2 instance:** Ubuntu 24.04 LTS on `m7i-flex.large` (2 vCPU, 8 GB), the
+   owner's host, with an **encrypted gp3 EBS volume** (30+ GB, KMS-encrypted).
 2. **Elastic IP:** Associate one Elastic IP with the instance.
 3. **DNS A record:** Point your domain (`QT_DOMAIN`, e.g.
    `quant.example.com`) to the Elastic IP so Caddy's ACME HTTP-01/TLS-ALPN-01
@@ -122,8 +121,12 @@ openssl rand -base64 32
 
 Optional overrides supported in the same JSON object: `QT_LOGIN_LIMIT`,
 `QT_LOGIN_WINDOW_SECONDS`, `QT_TRUSTED_PROXY_CIDRS`,
-`QT_WEB_TRUSTED_PROXY_CIDRS`, `QT_BFF_SUBNET`, `QT_WEB_BFF_IP`,
-`QT_CADDY_BFF_IP`.
+`QT_WEB_TRUSTED_PROXY_CIDRS`, `QT_BFF_SUBNET`, `QT_BFF_IP_RANGE`,
+`QT_WEB_BFF_IP`, `QT_CADDY_BFF_IP`.
+
+Whenever you override `QT_BFF_SUBNET`, also set `QT_BFF_IP_RANGE` to a range
+inside it that excludes `QT_WEB_BFF_IP` and `QT_CADDY_BFF_IP`, so dynamically
+addressed services (`api`) can never take the static proxy addresses.
 
 ## 3. Prepare the EC2 host (via SSM Session Manager)
 
