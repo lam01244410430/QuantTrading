@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SESSION_COOKIE_NAME } from "@/lib/backend";
+import { resetLoginRateLimitForTests } from "@/lib/rate-limit";
 
 let mockedCookieValue: string | undefined;
 
@@ -33,6 +34,7 @@ describe("BFF route handlers security, auth, and contract parity", () => {
   beforeEach(() => {
     mockedCookieValue = undefined;
     process.env.QUANTTRADING_API_URL = "http://127.0.0.1:8000";
+    resetLoginRateLimitForTests();
   });
 
   afterEach(() => {
@@ -172,6 +174,41 @@ describe("BFF route handlers security, auth, and contract parity", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
     const body = await res.json();
     expect(body.ok).toBe(false);
+  });
+
+  it("login enforces BFF rate limiting after repeated failed attempts without calling upstream", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ detail: "invalid" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    for (let i = 0; i < 10; i += 1) {
+      const res = await loginPost(
+        new Request("https://app.example.com/api/auth/login", {
+          method: "POST",
+          headers: { ...SAME_ORIGIN_HEADERS, "x-forwarded-for": "203.0.113.5" },
+          body: JSON.stringify({ username: "admin", password: "wrong" }),
+        })
+      );
+      expect(res.status).toBe(401);
+    }
+
+    expect(fetchMock).toHaveBeenCalledTimes(10);
+
+    const blockedRes = await loginPost(
+      new Request("https://app.example.com/api/auth/login", {
+        method: "POST",
+        headers: { ...SAME_ORIGIN_HEADERS, "x-forwarded-for": "203.0.113.5" },
+        body: JSON.stringify({ username: "admin", password: "wrong" }),
+      })
+    );
+    expect(blockedRes.status).toBe(429);
+    expect(blockedRes.headers.get("cache-control")).toBe("no-store");
+    expect(Number(blockedRes.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledTimes(10);
   });
 
   it("rejects cross-origin POST on login, logout, and runs with 403", async () => {

@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { loginAdmin, SESSION_COOKIE_NAME } from "@/lib/backend";
 import { isSecureRequest, verifySameOrigin } from "@/lib/csrf";
+import {
+  checkLoginRateLimit,
+  clearLoginRateLimit,
+  recordFailedLoginAttempt,
+} from "@/lib/rate-limit";
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
 
@@ -57,12 +62,30 @@ export async function POST(request: Request) {
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     request.headers.get("x-real-ip")?.trim() ||
     null;
+  const rateLimitKey = clientIp || "unknown";
+
+  const limitCheck = checkLoginRateLimit(rateLimitKey);
+  if (!limitCheck.allowed) {
+    return NextResponse.json(
+      { ok: false, error: safeLoginError(429) },
+      {
+        status: 429,
+        headers: {
+          ...NO_STORE_HEADERS,
+          "Retry-After": String(limitCheck.retryAfterSeconds),
+        },
+      }
+    );
+  }
 
   const result = await loginAdmin(username, password, clientIp);
 
   // Never proxy raw upstream login 422/error bodies (could echo password/input)
   // and never return access_token in any JSON response.
   if (!result.ok || !result.data) {
+    if (result.status === 401 || result.status === 422 || result.status === 400) {
+      recordFailedLoginAttempt(rateLimitKey);
+    }
     const status = result.status === 422 ? 401 : result.status;
     const headers: Record<string, string> = { ...NO_STORE_HEADERS };
     if (result.retryAfter) {
@@ -73,6 +96,8 @@ export async function POST(request: Request) {
       { status, headers }
     );
   }
+
+  clearLoginRateLimit(rateLimitKey);
 
   const token = result.data.access_token;
   if (!token || typeof result.data.expires_in !== "number") {
