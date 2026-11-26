@@ -24,7 +24,8 @@ describe("static security, licensing, and chart architecture invariants", () => 
     expect(pkg.dependencies["recharts"]).toBeUndefined();
 
     const notices = readFileSync(path.join(WEB_ROOT, "THIRD_PARTY_NOTICES.md"), "utf8");
-    expect(notices).toContain("TradingView");
+    expect(notices).toContain("TradingView Lightweight Charts™");
+    expect(notices).toContain("Copyright (с) 2025 TradingView, Inc. https://www.tradingview.com/");
     expect(notices).toContain("Apache");
   });
 
