@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 from uuid import UUID, uuid4
 
+from anyio import CapacityLimiter, WouldBlock
 from arq import create_pool
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -14,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from . import auth, runs
 from .database import candles as candle_table, create_engine
+from .login_throttle import HASH_CONCURRENCY, LoginThrottle
 from .schemas import (
     Admin, BacktestDetail, BacktestList, BacktestRequest, BacktestRun,
     Candle, CandleList, Interval, LoginRequest, LoginResponse,
@@ -25,6 +27,8 @@ from .synthetic import closed_series, decimal_text
 async def lifespan(app: FastAPI):
     auth.admin_username()
     auth.signing_key()
+    app.state.login_throttle = LoginThrottle.from_env()
+    app.state.login_capacity = CapacityLimiter(HASH_CONCURRENCY)
     engine = app.state.engine = create_engine()
     try:
         redis = app.state.redis = await create_pool(
@@ -48,6 +52,17 @@ router = APIRouter(prefix="/api/v1")
 bearer = HTTPBearer(bearerFormat="JWT", auto_error=False)
 UNAUTHORIZED = {401: {"description": "Invalid credentials or expired, revoked, or missing session"}}
 NOT_FOUND = {404: {"description": "Resource not found"}}
+LOGIN_RESPONSES = UNAUTHORIZED | {
+    429: {
+        "description": "Login rate limit exceeded",
+        "headers": {"Retry-After": {
+            "description": "Seconds until the rate-limit window resets",
+            "schema": {"type": "integer", "minimum": 1},
+        }},
+        "content": {"application/json": {"example": {"detail": "Too many login attempts"}}},
+    },
+    503: {"description": "Login temporarily unavailable"},
+}
 
 
 @app.exception_handler(RequestValidationError)
@@ -82,9 +97,25 @@ async def session(
 CurrentAdmin = Annotated[auth.Session, Depends(session)]
 
 
-@router.post("/auth/login", tags=["auth"], responses=UNAUTHORIZED)
+@router.post("/auth/login", tags=["auth"], responses=LOGIN_RESPONSES)
 async def login(body: LoginRequest, request: Request, response: Response) -> LoginResponse:
-    issued = await auth.issue_session(request.app.state.engine, body.username, body.password.get_secret_value())
+    state = request.app.state
+    try:
+        retry_after = await state.login_throttle.retry_after(state.redis, request)
+    except (RedisError, OSError):
+        raise HTTPException(503, detail="Login temporarily unavailable") from None
+    if retry_after:
+        raise HTTPException(429, detail="Too many login attempts", headers={
+            "Retry-After": str(retry_after), "Cache-Control": "no-store",
+        })
+    try:
+        state.login_capacity.acquire_nowait()
+    except WouldBlock:
+        raise HTTPException(503, detail="Login temporarily unavailable") from None
+    try:
+        issued = await auth.issue_session(state.engine, body.username, body.password.get_secret_value())
+    finally:
+        state.login_capacity.release()
     if issued is None:
         raise unauthorized()
     response.headers["Cache-Control"] = "no-store"

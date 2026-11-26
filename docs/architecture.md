@@ -79,12 +79,15 @@ private. Validate backups/restore, isolation, secret rotation, resource
 limits, monitoring and network latency before rollout. No deploy or VPS
 purchase without owner provisioning and approval.
 
-Before any non-loopback exposure, implement and test a login throttle that
-returns `429` and document that response in the API contract. Scrypt
-(`n=2^15`) uses about 32 MB per attempt in the threadpool, so unthrottled
-logins can exhaust memory and CPU. Key the throttle on the connection peer
-address or a header set only by a trusted proxy; never trust client-supplied
-`X-Forwarded-For`.
+The backend login-throttle gate is implemented and covered by Compose
+tests. Redis limits login attempts per peer and across peers and returns
+`429` before scrypt when exhausted. The API also caps concurrent login
+work at two per process (scrypt uses about 32 MB per attempt) and fails
+closed if Redis is unavailable. Keep Uvicorn proxy-header rewriting
+disabled so the app sees the socket peer. Forwarded addresses are ignored
+unless that peer matches an explicitly trusted proxy CIDR; only trust
+proxies that append or replace the header with the real upstream address.
+See the [API contract](api-contract.md). This does not authorize hosting.
 
 Paper first. Exchange testnet is a separate explicitly authorized stage;
 only after verification and explicit owner approval could a separate

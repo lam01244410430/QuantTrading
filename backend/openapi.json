@@ -636,6 +636,28 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Too many login attempts"
+                }
+              }
+            },
+            "description": "Login rate limit exceeded",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the rate-limit window resets",
+                "schema": {
+                  "minimum": 1.0,
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Login temporarily unavailable"
           }
         },
         "summary": "Login",
