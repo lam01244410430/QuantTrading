@@ -54,3 +54,30 @@ requirements, then run the tests:
 python -m pip install -r requirements-dev.txt
 python -m pytest
 ```
+
+## Local synthetic dashboard backend
+
+The optional backend is separate from the offline CLI. Docker Compose runs
+PostgreSQL/TimescaleDB, Redis, private FastAPI and an ARQ backtest worker.
+The one-shot `migrate` service applies Alembic migrations and seeds the
+local admin and synthetic candle series. No market data, exchange
+credentials, orders or billing are enabled.
+
+```sh
+cp backend/.env.example backend/.env
+chmod 600 backend/.env
+# Set QT_POSTGRES_PASSWORD, QT_ADMIN_PASSWORD, and QT_JWT_SECRET.
+# Generate separate values with openssl rand -hex 32; keep the file local.
+docker compose --env-file backend/.env up --build --wait
+docker compose --env-file backend/.env ps --all
+docker compose --env-file backend/.env run --build --rm tests
+```
+
+Keep the database password URL-safe (hex is recommended); the admin
+password must contain at least 12 characters and the JWT secret at least
+32 bytes. FastAPI binds to host loopback at `http://127.0.0.1:8000`
+for a local Next.js BFF (`QUANTTRADING_API_URL`, server only); use
+`http://api:8000` from within the Compose network. PostgreSQL and Redis
+have no host ports. See the [API contract](docs/api-contract.md) and
+[rollout architecture](docs/architecture.md). Stop with
+`docker compose --env-file backend/.env down`; named data volumes persist.

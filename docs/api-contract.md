@@ -21,10 +21,15 @@ authenticated requests. Do not expose this origin or bearer token via
    `GET /api/v1/auth/me` returns only the current admin identity.
 3. On logout, the BFF calls `POST /api/v1/auth/logout` with the bearer, then
    clears its cookie. FastAPI revokes the session and returns `204`. Clear the
-   local cookie on `401` as well (expired/revoked/missing session).
+   local cookie on `401` as well (expired/revoked/missing session). Protected
+   requests require HS256, issuer `quanttrading-private-api`, audience
+   `quanttrading-next-bff`, valid expiry and a live PostgreSQL session.
 
 This slice has a single environment-seeded administrator; no registration,
-public accounts or user-supplied exchange credentials.
+public accounts or user-supplied exchange credentials. PostgreSQL stores
+only a salted scrypt password hash and a SHA-256 digest of the random JWT
+session ID, never the raw password or bearer. There is no API login throttle
+in this loopback-only slice.
 
 ## Candles and backtest runs
 
@@ -41,7 +46,18 @@ until terminal. A succeeded run contains `result.summary`,
 A failed run has a non-null `error` code and no result. Request bounds:
 capital 0 < value ≤ 1,000,000,000 with up to two decimal places, position
 size 1–1,000,000 whole units, fee rate 0–0.01 with up to eight decimal
-places. API request validation returns `422`.
+places. API request validation returns a sanitized `422`:
+`{"detail":[{"loc":[],"msg":"Invalid request","type":"invalid_request"}]}`.
+Rejected fields and values are neither reflected nor logged.
+
+PostgreSQL commits the run before enqueue; ARQ uses the run ID as the job
+ID. The worker bounds computation at 20 seconds (25-second ARQ outer
+timeout). An enqueue failure returns `503` and attempts to mark the run
+`queue_unavailable`; if Redis accepted the job before the failure, the first
+DB state transition wins. Unclaimed jobs after 120 seconds and abandoned
+running jobs after 60 seconds become `failed` with `job_expired` on worker
+reconciliation (every 15 seconds) or API reads. This is queue maintenance,
+not a backtest or market-data schedule.
 
 For the run chart, fetch candles with the run's `request.symbol` and
 `request.interval`. The `1d` series uses the canonical fixture unchanged;
