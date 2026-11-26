@@ -81,3 +81,20 @@ for a local Next.js BFF (`QUANTTRADING_API_URL`, server only); use
 have no host ports. See the [API contract](docs/api-contract.md) and
 [rollout architecture](docs/architecture.md). Stop with
 `docker compose --env-file backend/.env down`; named data volumes persist.
+
+### Run the synthetic paper replay
+
+With the stack running, run the stages in order. Paper orders use a fixed
+quantity of one unit. Fills use the canonical default fee rate (0.001 of
+notional), rounded half up to cents. The report uses decimal strings and UTC
+Unix seconds; a null fill time means the order has not filled. No orders
+are submitted to an exchange.
+
+```sh
+for stage in replay relay strategy execute report; do
+  docker compose --env-file backend/.env run --rm --no-deps worker python -m backend.paper_cli "$stage"
+done
+```
+
+Rerunning the stages is safe. After an interrupted strategy run, wait at
+least 30 seconds before running `strategy` again to reclaim the pending entry.

@@ -14,15 +14,35 @@ queues backtests rather than running them on API requests; the worker uses
 the canonical offline Python engine read-only. Seeded synthetic data only.
 The canonical fixture and its standalone Python CLI are unchanged. No
 collector/strategy/executor, schedules, external data feeds, account
-registration, billing, credential collection, or exchange connections are
-part of this slice.
+registration, billing, credential collection, or exchange connections were
+part of the first slice.
 
-## Later PRs: recoverable data and paper trading first
+## Second PR: synthetic replay and paper execution
+
+The on-demand local stages are `replay → relay → strategy → execute`.
+The collector uses only the fixture-derived 15m series, backfills gaps from
+that same source, and writes a unique close event alongside each candle in
+one PostgreSQL transaction. A restarted relay retries unpublished rows and
+republishes rows still neither processed nor quarantined after 120 seconds
+(configurable with `relay --relay-ack-timeout`). Duplicates carry the same
+event ID. Redis uses AOF with one-second fsync; the outbox retry covers
+stream writes lost before fsync. The Redis Streams group reclaims
+entries idle for at least 30 seconds. The strategy commits its processed
+event ID and optional one-unit paper order atomically before acknowledging.
+Invalid events do not stop later deliveries. After three deliveries by
+default (configurable with `strategy --max-deliveries`), the consumer
+records their error code in PostgreSQL before acknowledging them.
+The executor fills at the next replayed bar's open, or leaves the order
+unfilled if that bar is absent; reruns cannot create a second fill.
+There is no external feed or order submission, user bot configuration,
+background schedule, or candle stream connection to the dashboard.
+
+## Later PRs: exchange data and configurable paper trading
 
 Three independent processes: market-data collector → strategy worker →
 **paper executor**. The collector maintains one multiplexed WebSocket per
 exchange for subscribed 15m streams where supported and uses the exchange's
-explicit close flag, not an inference from the local clock. It uses REST
+explicit close flag, not an inference from the local clock. It will use REST
 gap backfill on startup/reconnect and reconciles missing bars before
 resuming strategy processing for an affected series.
 
@@ -33,7 +53,9 @@ identity. A relay publishes candle-closed events to Redis **Streams**, not
 Pub/Sub. A crash between publish and marking the outbox sent can deliver
 duplicates, so consumers persist deduplication alongside their side
 effects, then acknowledge. Use consumer groups, pending-message recovery,
-and bounded retention/replay; monitor relay lag and missed gaps. Redis can
+and, before a persistent external feed, configure safe stream retention
+and monitor relay lag and missed gaps. The local replay has a finite source
+and does not trim pending work. Redis can
 cache 200 recent closed candles per series; PostgreSQL is authoritative and
 repairs cache misses. Do not silently run a strategy on a known gap.
 

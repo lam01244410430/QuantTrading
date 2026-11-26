@@ -76,6 +76,8 @@ and `{time, value: Number(equity)}` for equity. Put BUY/SELL markers on
 ## Planned, not implemented
 
 Drafts only; these are not routes in 0.1.0. Do not wire UI calls to them yet.
+The synthetic paper replay stores orders and fills internally and provides a
+local CLI report; it does not change this HTTP contract.
 
 | Surface | Draft shape |
 | --- | --- |
@@ -85,3 +87,15 @@ Drafts only; these are not routes in 0.1.0. Do not wire UI calls to them yet.
 | `WS /ws/events` | Draft BFF-mediated envelope `{id, type, occurred_at, data}` with types `order.updated`, `fill.created`, `pnl.updated`; data uses the matching shape above. |
 | `GET/POST /api/v1/exchange-keys`, `DELETE /api/v1/exchange-keys/{id}` | Future write-only secret; return metadata only: `{id, exchange, label, masked_key, environment, created_at}`. Require Read + applicable Spot/Futures Trade, Withdraw disabled, fixed VPS IP allowlisted. |
 | `GET /api/v1/billing/plans`, `POST /api/v1/billing/checkout`, `POST /api/v1/billing/webhook` | Plan `{id, name, price, currency, interval}`; checkout `{plan_id}` → `{checkout_url}`; provider-signed webhook. No payment integration active. |
+
+## Internal synthetic candle stream (not a BFF API)
+
+`qt:synthetic:candles` uses Redis Stream fields (all strings), for example:
+
+```json
+{"type":"candle.closed","event_id":"<outbox UUID>","exchange":"synthetic","market":"fixture","symbol":"SYNTH","timeframe":"15m","open_ts":"2026-01-05T00:00:00+00:00"}
+```
+
+Deduplicate using `event_id`, not the Redis-generated entry ID. The
+`paper-strategy` consumer group acknowledges only after the associated
+PostgreSQL transaction commits.

@@ -1,8 +1,8 @@
 from os import environ
 
 from sqlalchemy import (
-    UUID, BigInteger, Boolean, Column, DateTime, ForeignKey, Index, MetaData,
-    Numeric, SmallInteger, String, Table, func,
+    UUID, BigInteger, Boolean, CheckConstraint, Column, DateTime, ForeignKey,
+    Index, Integer, MetaData, Numeric, SmallInteger, String, Table, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -50,6 +50,54 @@ backtests = Table(
     Column("error", String(64)),
 )
 Index("ix_backtest_runs_owner_created", backtests.c.username, backtests.c.created_at, backtests.c.id)
+
+candle_identity = ("exchange", "market", "symbol", "timeframe", "open_ts")
+candle_outbox = Table(
+    "candle_outbox",
+    metadata,
+    Column("id", UUID, primary_key=True),
+    Column("exchange", String(32), nullable=False),
+    Column("market", String(32), nullable=False),
+    Column("symbol", String(16), nullable=False),
+    Column("timeframe", String(8), nullable=False),
+    Column("open_ts", DateTime(timezone=True), nullable=False),
+    Column("published_at", DateTime(timezone=True)),
+    UniqueConstraint(*candle_identity),
+)
+processed_candle_events = Table(
+    "processed_candle_events",
+    metadata,
+    Column("event_id", ForeignKey("candle_outbox.id"), primary_key=True),
+)
+candle_dead_letters = Table(
+    "candle_dead_letters",
+    metadata,
+    Column("stream", String(128), primary_key=True),
+    Column("message_id", String(64), primary_key=True),
+    Column("event_id", UUID, index=True),
+    Column("error_code", String(32), nullable=False),
+    Column("deliveries", Integer, nullable=False),
+    Column("recorded_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
+)
+paper_orders = Table(
+    "paper_orders",
+    metadata,
+    Column("event_id", ForeignKey("candle_outbox.id"), primary_key=True),
+    Column("side", String(4), nullable=False),
+    Column("signal_time", DateTime(timezone=True), nullable=False),
+    Column("quantity", Numeric, nullable=False),
+    CheckConstraint("side IN ('BUY', 'SELL')"),
+    CheckConstraint("quantity > 0"),
+)
+paper_fills = Table(
+    "paper_fills",
+    metadata,
+    Column("order_id", ForeignKey("paper_orders.event_id"), primary_key=True),
+    Column("fill_time", DateTime(timezone=True), nullable=False),
+    Column("price", Numeric, nullable=False),
+    Column("fee", Numeric, nullable=False),
+    CheckConstraint("price > 0"),
+)
 
 
 def database_url() -> str:
