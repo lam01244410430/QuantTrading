@@ -1,4 +1,5 @@
 import asyncio
+from decimal import Decimal
 from os import environ
 from subprocess import run
 from sys import executable
@@ -121,8 +122,8 @@ async def exercise_replay(engine, redis, stream):
     assert await count(engine, processed_candle_events) == len(source)
     assert await paper.execute_paper(engine) == 2
     orders = await paper.paper_report(engine)
-    assert [(order["side"], order["quantity"], order["price"]) for order in orders] == [
-        ("BUY", "1", "100.10"), ("SELL", "1", "104.30"), ("BUY", "1", None),
+    assert [(order["side"], order["quantity"], order["price"], order["fee"]) for order in orders] == [
+        ("BUY", "1", "100.10", "0.10"), ("SELL", "1", "104.30", "0.10"), ("BUY", "1", None, None),
     ]
     assert all(order["fill_time"] - order["signal_time"] == 900 for order in orders[:2])
     assert orders[-1]["signal_time"] == int(source[-1]["open_ts"].timestamp())
@@ -148,6 +149,10 @@ def test_synthetic_paper_replay_is_atomic_and_recoverable(replay_database):
             await engine.dispose()
 
     asyncio.run(test())
+
+
+def test_paper_fee_rounds_half_up_to_cents():
+    assert paper.paper_fee(Decimal("105"), Decimal("1")) == Decimal("0.11")
 
 
 @pytest.mark.skipif(not environ.get("QT_TEST_API_URL"), reason="requires Compose TimescaleDB and Redis")

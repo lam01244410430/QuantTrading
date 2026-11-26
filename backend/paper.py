@@ -1,10 +1,13 @@
 from datetime import timedelta
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from uuid import UUID, uuid4
 
 from redis.exceptions import ResponseError
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
+
+from quanttrading.constants import DEFAULT_FEE_RATE
+from quanttrading.engine import ACCOUNTING, CENT
 
 from .database import (
     candle_dead_letters, candle_identity, candle_outbox, candles, paper_fills, paper_orders, processed_candle_events,
@@ -16,6 +19,7 @@ GROUP = "paper-strategy"
 EVENT_TYPE = "candle.closed"
 STEP = timedelta(minutes=15)
 MAX_DELIVERIES = 3
+PAPER_FEE_RATE = Decimal(DEFAULT_FEE_RATE)
 
 
 class InvalidCandleEvent(ValueError):
@@ -200,6 +204,11 @@ async def consume_message(engine, redis, stream, message_id, values, max_deliver
     return await redis.xack(stream, GROUP, message_id)
 
 
+def paper_fee(price, quantity):
+    with localcontext(ACCOUNTING):
+        return (price * quantity * PAPER_FEE_RATE).quantize(CENT)
+
+
 async def execute_paper(engine):
     later = candle_outbox.alias("next_closed")
     series = candle_identity[:-1]
@@ -212,11 +221,16 @@ async def execute_paper(engine):
         candles.c.is_closed.is_(True),
     )
     async with engine.begin() as connection:
-        result = await connection.execute(select(paper_orders.c.event_id, later.c.open_ts, candles.c.open).select_from(
+        result = await connection.execute(select(
+            paper_orders.c.event_id, later.c.open_ts, candles.c.open, paper_orders.c.quantity,
+        ).select_from(
             paper_orders.join(candle_outbox).join(later, next_closed).join(candles, price_bar).outerjoin(paper_fills),
         ).where(paper_fills.c.order_id.is_(None)).order_by(paper_orders.c.signal_time)
             .with_for_update(of=paper_orders, skip_locked=True))
-        fills = [{"order_id": order, "fill_time": ts, "price": price} for order, ts, price in result]
+        fills = [
+            {"order_id": order, "fill_time": ts, "price": price, "fee": paper_fee(price, quantity)}
+            for order, ts, price, quantity in result
+        ]
         if fills:
             await connection.execute(insert(paper_fills).on_conflict_do_nothing(), fills)
     return len(fills)
@@ -224,7 +238,7 @@ async def execute_paper(engine):
 
 async def paper_report(engine):
     async with engine.connect() as connection:
-        result = await connection.execute(select(paper_orders, paper_fills.c.fill_time, paper_fills.c.price)
+        result = await connection.execute(select(paper_orders, paper_fills.c.fill_time, paper_fills.c.price, paper_fills.c.fee)
                                           .outerjoin(paper_fills).order_by(paper_orders.c.signal_time))
         return [{
             "id": str(row.event_id),
@@ -233,4 +247,5 @@ async def paper_report(engine):
             "signal_time": int(row.signal_time.timestamp()),
             "fill_time": int(row.fill_time.timestamp()) if row.fill_time is not None else None,
             "price": decimal_text(row.price) if row.price is not None else None,
+            "fee": decimal_text(row.fee) if row.fee is not None else None,
         } for row in result]

@@ -95,6 +95,7 @@ paper_fills = Table(
     Column("order_id", ForeignKey("paper_orders.event_id"), primary_key=True),
     Column("fill_time", DateTime(timezone=True), nullable=False),
     Column("price", Numeric, nullable=False),
+    Column("fee", Numeric, nullable=False),
     CheckConstraint("price > 0"),
 )
 

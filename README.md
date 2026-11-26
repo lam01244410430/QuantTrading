@@ -84,9 +84,11 @@ have no host ports. See the [API contract](docs/api-contract.md) and
 
 ### Run the synthetic paper replay
 
-With the stack running, run the stages in order. The final report uses
-decimal strings and UTC Unix seconds; a null fill time means the order has
-not filled. The pipeline submits no orders to an exchange.
+With the stack running, run the stages in order. Paper orders use a fixed
+quantity of one unit. Fills use the canonical default fee rate (0.001 of
+notional), rounded half up to cents. The report uses decimal strings and UTC
+Unix seconds; a null fill time means the order has not filled. No orders
+are submitted to an exchange.
 
 ```sh
 for stage in replay relay strategy execute report; do
