@@ -24,21 +24,55 @@ function parseScaledDecimal(value: string, scale: number): bigint {
 
 const MAX_CAPITAL_CENTS = BigInt("100000000000"); // 1000000000.00
 const MAX_FEE_SCALED = BigInt("1000000"); // 0.01 * 10^8
+const ALLOWED_REQUEST_KEYS: ReadonlySet<string> = new Set([
+  "symbol",
+  "interval",
+  "starting_capital",
+  "position_size",
+  "fee_rate",
+]);
 
-export function validateBacktestRequest(input: Partial<BacktestRequest>): {
+export function validateBacktestRequest(
+  input: Partial<BacktestRequest> | Record<string, unknown>
+): {
   valid: boolean;
   request?: BacktestRequest;
   issues: ContractIssue[];
 } {
-  const symbol = input.symbol ?? "SYNTH";
-  const interval = input.interval ?? "1d";
-  const starting_capital =
-    typeof input.starting_capital === "string" ? input.starting_capital : "";
-  const position_size =
-    typeof input.position_size === "string" ? input.position_size : "";
-  const fee_rate = typeof input.fee_rate === "string" ? input.fee_rate : "";
-
+  const record = input as Record<string, unknown>;
   const issues: ContractIssue[] = [];
+
+  for (const key of Object.keys(record)) {
+    if (!ALLOWED_REQUEST_KEYS.has(key)) {
+      issues.push({
+        code: "E102_BAD_PARAMETER",
+        row: 0,
+        column: key,
+        message: `Unexpected parameter: ${key}.`,
+      });
+    }
+  }
+
+  const rawSymbol =
+    record.symbol === undefined ? DEFAULT_BACKTEST_REQUEST.symbol : record.symbol;
+  const rawInterval =
+    record.interval === undefined ? DEFAULT_BACKTEST_REQUEST.interval : record.interval;
+  const rawCapital =
+    record.starting_capital === undefined
+      ? DEFAULT_BACKTEST_REQUEST.starting_capital
+      : record.starting_capital;
+  const rawSize =
+    record.position_size === undefined
+      ? DEFAULT_BACKTEST_REQUEST.position_size
+      : record.position_size;
+  const rawFee =
+    record.fee_rate === undefined ? DEFAULT_BACKTEST_REQUEST.fee_rate : record.fee_rate;
+
+  const symbol = typeof rawSymbol === "string" ? rawSymbol : "";
+  const interval = typeof rawInterval === "string" ? rawInterval : "";
+  const starting_capital = typeof rawCapital === "string" ? rawCapital : "";
+  const position_size = typeof rawSize === "string" ? rawSize : "";
+  const fee_rate = typeof rawFee === "string" ? rawFee : "";
 
   if (symbol !== "SYNTH") {
     issues.push({

@@ -7,7 +7,6 @@ import {
 } from "@/lib/backend";
 import { validateBacktestRequest } from "@/lib/contract";
 import { isSecureRequest, verifySameOrigin } from "@/lib/csrf";
-import type { Interval } from "@/lib/types";
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
 
@@ -87,22 +86,14 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!body || typeof body !== "object") {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
     return NextResponse.json(
       { ok: false, error: "Request body must be a JSON object" },
       { status: 400, headers: NO_STORE_HEADERS }
     );
   }
 
-  const raw = body as Record<string, unknown>;
-  const validation = validateBacktestRequest({
-    symbol: typeof raw.symbol === "string" ? (raw.symbol as "SYNTH") : "SYNTH",
-    interval: typeof raw.interval === "string" ? (raw.interval as Interval) : "1d",
-    starting_capital:
-      typeof raw.starting_capital === "string" ? raw.starting_capital : undefined,
-    position_size: typeof raw.position_size === "string" ? raw.position_size : undefined,
-    fee_rate: typeof raw.fee_rate === "string" ? raw.fee_rate : undefined,
-  });
+  const validation = validateBacktestRequest(body as Record<string, unknown>);
 
   if (!validation.valid || !validation.request) {
     return NextResponse.json(
