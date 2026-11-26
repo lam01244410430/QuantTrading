@@ -6,6 +6,7 @@ import type {
   CandleList,
   Interval,
 } from "./types";
+import { normalizePeerAddress } from "./peer";
 
 export const SESSION_COOKIE_NAME = "qt_session";
 
@@ -34,6 +35,7 @@ export async function backendFetch<T>(
     method?: "GET" | "POST" | "DELETE";
     sessionToken?: string | null;
     body?: unknown;
+    clientPeerIp?: string | null;
     fetchImpl?: typeof fetch;
   } = {}
 ): Promise<BackendResult<T>> {
@@ -47,6 +49,10 @@ export async function backendFetch<T>(
   }
   if (options.sessionToken) {
     headers["Authorization"] = `Bearer ${options.sessionToken}`;
+  }
+  const normalizedPeer = normalizePeerAddress(options.clientPeerIp);
+  if (normalizedPeer) {
+    headers["X-Forwarded-For"] = normalizedPeer;
   }
 
   const controller = new AbortController();
@@ -130,7 +136,10 @@ export async function fetchCurrentAdmin(
 export async function loginAdmin(
   username: string,
   password: string,
-  fetchImpl?: typeof fetch
+  options?: {
+    clientPeerIp?: string | null;
+    fetchImpl?: typeof fetch;
+  }
 ): Promise<
   BackendResult<{
     access_token: string;
@@ -142,7 +151,8 @@ export async function loginAdmin(
   return backendFetch("/api/v1/auth/login", {
     method: "POST",
     body: { username, password },
-    fetchImpl,
+    clientPeerIp: options?.clientPeerIp,
+    fetchImpl: options?.fetchImpl,
   });
 }
 

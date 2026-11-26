@@ -57,11 +57,12 @@ python -m pytest
 
 ## Local synthetic dashboard backend
 
-The optional backend is separate from the offline CLI. Docker Compose runs
-PostgreSQL/TimescaleDB, Redis, private FastAPI and an ARQ backtest worker.
-The one-shot `migrate` service applies Alembic migrations and seeds the
-local admin and synthetic candle series. No market data, exchange
-credentials, orders or billing are enabled.
+The optional dashboard stack is separate from the offline CLI. Docker Compose
+runs PostgreSQL/TimescaleDB, Redis, private FastAPI, an ARQ backtest worker,
+and the Next.js BFF (`web` at `http://127.0.0.1:3000`). The one-shot `migrate`
+service applies Alembic migrations and seeds the local admin and synthetic
+candle series. No market data, exchange credentials, orders or billing are
+enabled.
 
 ```sh
 cp backend/.env.example backend/.env
@@ -85,13 +86,13 @@ have no host ports. See the [API contract](docs/api-contract.md) and
 Login is limited to 10 requests per client and 120 total per 60 seconds
 by default. Use `QT_LOGIN_LIMIT` and `QT_LOGIN_WINDOW_SECONDS` to change
 the client limit and window. Redis unavailability blocks new logins with
-`503`. Leave `QT_TRUSTED_PROXY_CIDRS` empty unless the listed peers are
-trusted proxies that append the real source address or replace
-`X-Forwarded-For`. When enabled, list only those proxy IPs or CIDRs
-(comma separated). Keep Uvicorn's `--no-proxy-headers` enabled.
-Before hosting the BFF, add its backend-facing address to the trusted
-list and have it overwrite `X-Forwarded-For` with the actual socket peer,
-not the incoming client's header. Otherwise all BFF logins share one limit.
+`503`. In Compose, `web` (`web/server.mjs`) captures each client's real TCP
+socket peer and overwrites `X-Forwarded-For` when calling `api`, never passing
+the client's header through. `docker-compose.yml` assigns `web` the static IP
+`172.30.0.10` on the `bff` network and defaults `QT_TRUSTED_PROXY_CIDRS` to
+`172.30.0.10/32` so only the BFF is trusted (keep Uvicorn's `--no-proxy-headers`
+enabled). When hosting the BFF outside Compose, set `QT_TRUSTED_PROXY_CIDRS`
+to the BFF's exact backend-facing IP/CIDR.
 
 ### Run the synthetic paper replay
 

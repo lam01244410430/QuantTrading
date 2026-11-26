@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import { loginAdmin, SESSION_COOKIE_NAME } from "@/lib/backend";
 import { isSecureRequest, verifySameOrigin } from "@/lib/csrf";
-import {
-  clearLoginRateLimit,
-  consumeLoginAttempt,
-  refundLoginAttempt,
-} from "@/lib/rate-limit";
+import { getSocketPeer } from "@/lib/peer";
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
 
@@ -58,30 +54,15 @@ export async function POST(request: Request) {
     );
   }
 
-  // Single-admin sign-in rate limit: O(1) storage, no spoofable forwarding headers,
-  // and synchronous slot reservation before awaiting upstream auth so concurrent requests cannot bypass it.
-  const limitCheck = consumeLoginAttempt();
-  if (!limitCheck.allowed) {
-    return NextResponse.json(
-      { ok: false, error: safeLoginError(429) },
-      {
-        status: 429,
-        headers: {
-          ...NO_STORE_HEADERS,
-          "Retry-After": String(limitCheck.retryAfterSeconds),
-        },
-      }
-    );
-  }
-
-  const result = await loginAdmin(username, password);
+  // Overwrite X-Forwarded-For upstream with only the BFF's real TCP socket peer
+  // (captured by web/server.mjs from req.socket.remoteAddress, never client headers).
+  // FastAPI enforces per-peer + global login throttling in Redis using QT_TRUSTED_PROXY_CIDRS.
+  const clientPeerIp = getSocketPeer();
+  const result = await loginAdmin(username, password, { clientPeerIp });
 
   // Never proxy raw upstream login 422/error bodies (could echo password/input)
   // and never return access_token in any JSON response.
   if (!result.ok || !result.data) {
-    if (result.status >= 500) {
-      refundLoginAttempt(limitCheck.token);
-    }
     const status = result.status === 422 ? 401 : result.status;
     const headers: Record<string, string> = { ...NO_STORE_HEADERS };
     if (result.retryAfter) {
@@ -92,8 +73,6 @@ export async function POST(request: Request) {
       { status, headers }
     );
   }
-
-  clearLoginRateLimit();
 
   const token = result.data.access_token;
   if (!token || typeof result.data.expires_in !== "number") {
