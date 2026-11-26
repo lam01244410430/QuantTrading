@@ -90,6 +90,35 @@ describe("BFF route handlers security, auth, and contract parity", () => {
     expect(setCookie).toContain("Max-Age=28800");
   });
 
+  it("login forwards admin username verbatim including surrounding whitespace", async () => {
+    let forwardedBody: string | undefined;
+    globalThis.fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      forwardedBody = typeof init?.body === "string" ? init.body : undefined;
+      return new Response(
+        JSON.stringify({
+          access_token: "tok",
+          token_type: "bearer",
+          expires_in: 3600,
+          user: { username: " admin ", role: "admin" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }) as unknown as typeof fetch;
+
+    const req = new Request("https://app.example.com/api/auth/login", {
+      method: "POST",
+      headers: SAME_ORIGIN_HEADERS,
+      body: JSON.stringify({ username: " admin ", password: "pw" }),
+    });
+
+    const res = await loginPost(req);
+    expect(res.status).toBe(200);
+    expect(JSON.parse(forwardedBody ?? "{}")).toEqual({
+      username: " admin ",
+      password: "pw",
+    });
+  });
+
   it("login NEVER proxies raw upstream 422 validation bodies (which could echo passwords)", async () => {
     globalThis.fetch = vi.fn(async () =>
       new Response(

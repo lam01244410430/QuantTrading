@@ -44,8 +44,8 @@ export async function POST(request: Request) {
   if (
     typeof username !== "string" ||
     typeof password !== "string" ||
-    !username.trim() ||
-    !password
+    username.length === 0 ||
+    password.length === 0
   ) {
     return NextResponse.json(
       { ok: false, error: "Username and password are required." },
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     request.headers.get("x-real-ip")?.trim() ||
     null;
 
-  const result = await loginAdmin(username.trim(), password, clientIp);
+  const result = await loginAdmin(username, password, clientIp);
 
   // Never proxy raw upstream login 422/error bodies (could echo password/input)
   // and never return access_token in any JSON response.
