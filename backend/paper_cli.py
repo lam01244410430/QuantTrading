@@ -9,7 +9,7 @@ from . import paper, runs
 from .database import create_engine
 
 
-async def run(command, consumer):
+async def run(command, consumer, max_deliveries):
     engine = create_engine()
     try:
         if command == "replay":
@@ -27,7 +27,7 @@ async def run(command, consumer):
                 while await paper.relay_next(engine, redis):
                     count += 1
                 return {"published_events": count}
-            return {"acknowledged_events": await paper.consume(engine, redis, consumer)}
+            return {"acknowledged_events": await paper.consume(engine, redis, consumer, max_deliveries=max_deliveries)}
         finally:
             await redis.aclose()
     finally:
@@ -38,8 +38,9 @@ def main():
     parser = argparse.ArgumentParser(description="Run one stage of the offline synthetic paper replay.")
     parser.add_argument("command", choices=["replay", "relay", "strategy", "execute", "report"])
     parser.add_argument("--consumer", default=f"paper-{uuid4()}")
+    parser.add_argument("--max-deliveries", type=int, default=paper.MAX_DELIVERIES)
     args = parser.parse_args()
-    print(json.dumps(asyncio.run(run(args.command, args.consumer)), indent=2))
+    print(json.dumps(asyncio.run(run(args.command, args.consumer, args.max_deliveries)), indent=2))
 
 
 if __name__ == "__main__":

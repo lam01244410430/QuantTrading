@@ -3,11 +3,11 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from redis.exceptions import ResponseError
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from .database import (
-    candle_identity, candle_outbox, candles, paper_fills, paper_orders, processed_candle_events,
+    candle_dead_letters, candle_identity, candle_outbox, candles, paper_fills, paper_orders, processed_candle_events,
 )
 from .synthetic import decimal_text, fixture_rows
 
@@ -15,6 +15,11 @@ STREAM = "qt:synthetic:candles"
 GROUP = "paper-strategy"
 EVENT_TYPE = "candle.closed"
 STEP = timedelta(minutes=15)
+MAX_DELIVERIES = 3
+
+
+class InvalidCandleEvent(ValueError):
+    pass
 
 
 def replay_source():
@@ -100,7 +105,9 @@ def strategy_side(previous, current):
 async def process_event(engine, event_id):
     async with engine.begin() as connection:
         result = await connection.execute(select(candle_outbox).where(candle_outbox.c.id == event_id))
-        event = result.mappings().one()
+        event = result.mappings().one_or_none()
+        if event is None:
+            raise InvalidCandleEvent("missing_outbox_event")
         inserted = await connection.scalar(insert(processed_candle_events).values(event_id=event_id)
                                            .on_conflict_do_nothing().returning(processed_candle_events.c.event_id))
         if inserted is None:
@@ -111,12 +118,12 @@ async def process_event(engine, event_id):
             matches(candles, current), candles.c.is_closed.is_(True),
         ))
         if signal is None:
-            raise ValueError("Close event has no matching closed candle")
+            raise InvalidCandleEvent("missing_closed_candle")
         previous = await connection.scalar(select(candles.c.signal).where(
             matches(candles, prior), candles.c.is_closed.is_(True),
         ))
         if previous is None and current["open_ts"] != replay_source()[0]["open_ts"]:
-            raise ValueError("Close event has a gap before its candle")
+            raise InvalidCandleEvent("candle_gap")
         side = strategy_side(previous or 0, signal)
         if side is not None:
             await connection.execute(insert(paper_orders).values(
@@ -132,40 +139,65 @@ async def ensure_group(redis, stream):
             raise
 
 
-def redis_message(values):
-    return {
-        key.decode() if isinstance(key, bytes) else key: value.decode() if isinstance(value, bytes) else value
-        for key, value in values.items()
-    }
+def redis_text(value):
+    return value.decode() if isinstance(value, bytes) else value
 
 
-async def consume(engine, redis, consumer, stream=STREAM, reclaim_idle_ms=30_000, limit=100):
+async def consume(engine, redis, consumer, stream=STREAM, reclaim_idle_ms=30_000, limit=100,
+                  max_deliveries=MAX_DELIVERIES):
+    if max_deliveries < 1:
+        raise ValueError("max_deliveries must be at least 1")
     await ensure_group(redis, stream)
-    count, start = 0, "0-0"
-    while count < limit:
+    acked, seen, start = 0, 0, "0-0"
+    while seen < limit:
         start, messages, _ = await redis.xautoclaim(
-            stream, GROUP, consumer, reclaim_idle_ms, start_id=start, count=limit - count,
+            stream, GROUP, consumer, reclaim_idle_ms, start_id=start, count=limit - seen,
         )
         for message_id, message in messages:
-            await consume_message(engine, redis, stream, message_id, message)
-            count += 1
+            acked += await consume_message(engine, redis, stream, message_id, message, max_deliveries)
+            seen += 1
         if start in ("0-0", b"0-0"):
             break
-    if count < limit:
-        streams = await redis.xreadgroup(GROUP, consumer, {stream: ">"}, count=limit - count)
+    if seen < limit:
+        streams = await redis.xreadgroup(GROUP, consumer, {stream: ">"}, count=limit - seen)
         for _, messages in streams:
             for message_id, message in messages:
-                await consume_message(engine, redis, stream, message_id, message)
-                count += 1
-    return count
+                acked += await consume_message(engine, redis, stream, message_id, message, max_deliveries)
+    return acked
 
 
-async def consume_message(engine, redis, stream, message_id, values):
-    message = redis_message(values)
-    if message["type"] != EVENT_TYPE:
-        raise ValueError("Unexpected event type in synthetic candle stream")
-    await process_event(engine, UUID(message["event_id"]))
-    await redis.xack(stream, GROUP, message_id)
+def parse_message(values):
+    try:
+        message = {redis_text(key): redis_text(value) for key, value in values.items()}
+        event_id = UUID(message["event_id"])
+        return event_id, None if message.get("type") == EVENT_TYPE else "invalid_event_type"
+    except (KeyError, ValueError):
+        return None, "invalid_event_payload"
+
+
+async def consume_message(engine, redis, stream, message_id, values, max_deliveries):
+    event_id, error = parse_message(values)
+    key = {"stream": stream, "message_id": redis_text(message_id)}
+    quarantine = matches(candle_dead_letters, key)
+    if event_id is not None:
+        quarantine = or_(quarantine, candle_dead_letters.c.event_id == event_id)
+    async with engine.connect() as connection:
+        quarantined = await connection.scalar(select(candle_dead_letters.c.message_id).where(quarantine).limit(1))
+    if quarantined is None:
+        if error is None:
+            try:
+                await process_event(engine, event_id)
+            except InvalidCandleEvent as exc:
+                error = str(exc)
+        if error is not None:
+            pending = await redis.xpending_range(stream, GROUP, message_id, message_id, 1)
+            if not pending or pending[0]["times_delivered"] < max_deliveries:
+                return 0
+            async with engine.begin() as connection:
+                await connection.execute(insert(candle_dead_letters).values(
+                    **key, event_id=event_id, error_code=error, deliveries=pending[0]["times_delivered"],
+                ).on_conflict_do_nothing())
+    return await redis.xack(stream, GROUP, message_id)
 
 
 async def execute_paper(engine):

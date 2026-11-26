@@ -26,6 +26,9 @@ one PostgreSQL transaction. A restarted relay retries unpublished rows;
 duplicates carry the same event ID. The Redis Streams group reclaims
 entries idle for at least 30 seconds. The strategy commits its processed
 event ID and optional one-unit paper order atomically before acknowledging.
+Invalid events do not stop later deliveries. After three deliveries by
+default (configurable with `strategy --max-deliveries`), the consumer
+records their error code in PostgreSQL before acknowledging them.
 The executor fills at the next replayed bar's open, or leaves the order
 unfilled if that bar is absent; reruns cannot create a second fill.
 There is no external feed or order submission, user bot configuration,

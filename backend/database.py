@@ -2,7 +2,7 @@ from os import environ
 
 from sqlalchemy import (
     UUID, BigInteger, Boolean, CheckConstraint, Column, DateTime, ForeignKey,
-    Index, MetaData, Numeric, SmallInteger, String, Table, UniqueConstraint, func,
+    Index, Integer, MetaData, Numeric, SmallInteger, String, Table, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -68,6 +68,16 @@ processed_candle_events = Table(
     "processed_candle_events",
     metadata,
     Column("event_id", ForeignKey("candle_outbox.id"), primary_key=True),
+)
+candle_dead_letters = Table(
+    "candle_dead_letters",
+    metadata,
+    Column("stream", String(128), primary_key=True),
+    Column("message_id", String(64), primary_key=True),
+    Column("event_id", UUID, index=True),
+    Column("error_code", String(32), nullable=False),
+    Column("deliveries", Integer, nullable=False),
+    Column("recorded_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
 )
 paper_orders = Table(
     "paper_orders",

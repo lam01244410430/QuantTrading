@@ -6,13 +6,13 @@ from uuid import uuid4
 
 import pytest
 from arq import create_pool
-from sqlalchemy import func, select, text
+from sqlalchemy import func, insert, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from backend import paper, runs
 from backend.database import (
-    candle_outbox, candles, database_url, paper_orders, processed_candle_events,
+    candle_dead_letters, candle_outbox, candles, database_url, paper_orders, processed_candle_events,
 )
 
 
@@ -142,6 +142,41 @@ def test_synthetic_paper_replay_is_atomic_and_recoverable(replay_database):
         stream = f"{paper.STREAM}:test:{uuid4()}"
         try:
             await exercise_replay(engine, redis, stream)
+        finally:
+            await redis.delete(stream)
+            await redis.aclose()
+            await engine.dispose()
+
+    asyncio.run(test())
+
+
+@pytest.mark.skipif(not environ.get("QT_TEST_API_URL"), reason="requires Compose TimescaleDB and Redis")
+def test_poison_event_does_not_block_and_is_quarantined(replay_database):
+    async def test():
+        engine = create_async_engine(replay_database)
+        redis = await create_pool(runs.redis_settings())
+        stream = f"{paper.STREAM}:test:{uuid4()}"
+        try:
+            source = paper.replay_source()
+            bad_event = {"id": uuid4(), **paper.identity(source[1])}
+            async with engine.begin() as connection:
+                await connection.execute(insert(candle_outbox).values(**bad_event))
+            message_id = await redis.xadd(stream, paper.event_fields(bad_event))
+            assert await paper.replay_candle(engine, source[0], source) == 1
+            assert await paper.relay_next(engine, redis, stream)
+            assert await paper.consume(engine, redis, "first", stream, max_deliveries=2) == 1
+            assert await count(engine, paper_orders) == 1
+            assert await count(engine, candle_dead_letters) == 0
+            assert (await redis.xpending(stream, paper.GROUP))["pending"] == 1
+
+            assert await paper.consume(engine, redis, "retry", stream, reclaim_idle_ms=0, max_deliveries=2) == 1
+            async with engine.connect() as connection:
+                row = (await connection.execute(select(candle_dead_letters))).one()
+            assert (row.message_id, row.event_id, row.error_code, row.deliveries) == (
+                message_id.decode(), bad_event["id"], "missing_closed_candle", 2,
+            )
+            assert (await redis.xpending(stream, paper.GROUP))["pending"] == 0
+            assert await count(engine, processed_candle_events) == 1
         finally:
             await redis.delete(stream)
             await redis.aclose()
