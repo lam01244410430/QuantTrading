@@ -131,3 +131,31 @@ export function validateBacktestRequest(input: Partial<BacktestRequest>): {
     issues: [],
   };
 }
+
+const FRACTION_RE = /^[0-9]+(\.[0-9]+)?$/;
+
+/**
+ * Formats a contract drawdown fraction decimal string (e.g. "0.004955") as a
+ * display percentage rounded half-up to 2 decimal places (e.g. "0.50%").
+ * Uses exact BigInt decimal arithmetic at the display boundary.
+ */
+export function formatDrawdownPercent(fraction: string | null | undefined): string {
+  if (typeof fraction !== "string") return "—";
+  const trimmed = fraction.trim();
+  if (!FRACTION_RE.test(trimmed)) return "—";
+
+  const [intPart, fracPart = ""] = trimmed.split(".");
+  // Multiply by 100 (shift decimal point right by 2) and keep 2 display decimals
+  // plus 1 extra digit for half-up rounding => 4 fractional digits from original.
+  const padded = fracPart.padEnd(5, "0");
+  const shiftedDigits = intPart + padded.slice(0, 4);
+  const roundDigit = Number(padded[4]);
+  let scaled = BigInt(shiftedDigits);
+  if (roundDigit >= 5) {
+    scaled += 1n;
+  }
+
+  const whole = scaled / 100n;
+  const hundredths = (scaled % 100n).toString().padStart(2, "0");
+  return `${whole.toString()}.${hundredths}%`;
+}

@@ -23,6 +23,7 @@ import type {
 import {
   CONTRACT_VERSION,
   DEFAULT_BACKTEST_REQUEST,
+  formatDrawdownPercent,
   validateBacktestRequest,
 } from "@/lib/contract";
 import { Button } from "@/components/ui/button";
@@ -570,7 +571,7 @@ export function DashboardClient({
 
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
+              <div className="flex w-full items-center justify-between gap-2">
                 <CardTitle>Recent Runs</CardTitle>
                 <span className="font-mono text-xs text-[var(--text-muted)]">
                   {runs.length}
@@ -700,8 +701,11 @@ export function DashboardClient({
                 <div className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
                   Max Drawdown
                 </div>
-                <div className="mt-1 font-mono text-xl font-semibold text-[var(--text)]">
-                  {summary ? summary.max_drawdown : "—"}
+                <div
+                  className="mt-1 font-mono text-xl font-semibold text-[var(--text)]"
+                  title={summary ? `Raw fraction: ${summary.max_drawdown}` : undefined}
+                >
+                  {summary ? formatDrawdownPercent(summary.max_drawdown) : "—"}
                 </div>
                 <div className="mt-0.5 font-mono text-[11px] text-[var(--text-muted)]">
                   {summary ? `${summary.bars} bars` : "—"}
@@ -841,8 +845,11 @@ export function DashboardClient({
                           <TableCell className="text-right font-mono text-xs">
                             {row.peak}
                           </TableCell>
-                          <TableCell className="text-right font-mono text-xs">
-                            {row.drawdown}
+                          <TableCell
+                            className="text-right font-mono text-xs"
+                            title={`Raw fraction: ${row.drawdown}`}
+                          >
+                            {formatDrawdownPercent(row.drawdown)}
                           </TableCell>
                         </TableRow>
                       ))}

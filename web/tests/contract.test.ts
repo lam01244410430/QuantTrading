@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_BACKTEST_REQUEST,
+  formatDrawdownPercent,
   validateBacktestRequest,
 } from "@/lib/contract";
 
@@ -109,5 +110,23 @@ describe("ohlc-signal/v2.1.1 parameter validation", () => {
         interval: "1h" as "1d",
       }).valid
     ).toBe(false);
+  });
+});
+
+describe("formatDrawdownPercent", () => {
+  it("formats canonical fixture max_drawdown fraction 0.004955 as 0.50%", () => {
+    expect(formatDrawdownPercent("0.004955")).toBe("0.50%");
+  });
+
+  it("formats zero, rounding boundaries, and invalid values cleanly", () => {
+    expect(formatDrawdownPercent("0")).toBe("0.00%");
+    expect(formatDrawdownPercent("0.000000")).toBe("0.00%");
+    expect(formatDrawdownPercent("0.00494")).toBe("0.49%");
+    expect(formatDrawdownPercent("0.125")).toBe("12.50%");
+    expect(formatDrawdownPercent("1")).toBe("100.00%");
+    expect(formatDrawdownPercent(null)).toBe("—");
+    expect(formatDrawdownPercent(undefined)).toBe("—");
+    expect(formatDrawdownPercent("")).toBe("—");
+    expect(formatDrawdownPercent("-0.01")).toBe("—");
   });
 });
