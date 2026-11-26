@@ -1,0 +1,46 @@
+import argparse
+import asyncio
+import json
+from uuid import uuid4
+
+from arq import create_pool
+
+from . import paper, runs
+from .database import create_engine
+
+
+async def run(command, consumer):
+    engine = create_engine()
+    try:
+        if command == "replay":
+            source = paper.replay_source()
+            count = await paper.replay_candle(engine, source[-1], source)
+            return {"new_close_events": count}
+        if command == "execute":
+            return {"new_paper_fills": await paper.execute_paper(engine)}
+        if command == "report":
+            return {"orders": await paper.paper_report(engine)}
+        redis = await create_pool(runs.redis_settings())
+        try:
+            if command == "relay":
+                count = 0
+                while await paper.relay_next(engine, redis):
+                    count += 1
+                return {"published_events": count}
+            return {"acknowledged_events": await paper.consume(engine, redis, consumer)}
+        finally:
+            await redis.aclose()
+    finally:
+        await engine.dispose()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Run one stage of the offline synthetic paper replay.")
+    parser.add_argument("command", choices=["replay", "relay", "strategy", "execute", "report"])
+    parser.add_argument("--consumer", default=f"paper-{uuid4()}")
+    args = parser.parse_args()
+    print(json.dumps(asyncio.run(run(args.command, args.consumer)), indent=2))
+
+
+if __name__ == "__main__":
+    main()
