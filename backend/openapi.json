@@ -1,0 +1,937 @@
+{
+  "components": {
+    "schemas": {
+      "Admin": {
+        "properties": {
+          "role": {
+            "const": "admin",
+            "default": "admin",
+            "title": "Role",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username"
+        ],
+        "title": "Admin",
+        "type": "object"
+      },
+      "BacktestDetail": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/BacktestRequest"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BacktestResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "created_at",
+          "request",
+          "result",
+          "error"
+        ],
+        "title": "BacktestDetail",
+        "type": "object"
+      },
+      "BacktestList": {
+        "properties": {
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/BacktestRun"
+            },
+            "title": "Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "runs"
+        ],
+        "title": "BacktestList",
+        "type": "object"
+      },
+      "BacktestRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "fee_rate": {
+            "default": "0.001",
+            "pattern": "^[0-9]{1,2}(?:\\.[0-9]{1,8})?$",
+            "title": "Fee Rate",
+            "type": "string"
+          },
+          "interval": {
+            "default": "1d",
+            "enum": [
+              "15m",
+              "1d"
+            ],
+            "title": "Interval",
+            "type": "string"
+          },
+          "position_size": {
+            "default": "50",
+            "pattern": "^[1-9][0-9]{0,6}$",
+            "title": "Position Size",
+            "type": "string"
+          },
+          "starting_capital": {
+            "default": "10000.00",
+            "pattern": "^[0-9]{1,10}(?:\\.[0-9]{1,2})?$",
+            "title": "Starting Capital",
+            "type": "string"
+          },
+          "symbol": {
+            "const": "SYNTH",
+            "default": "SYNTH",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "title": "BacktestRequest",
+        "type": "object"
+      },
+      "BacktestResult": {
+        "properties": {
+          "equity_curve": {
+            "items": {
+              "$ref": "#/components/schemas/EquityPoint"
+            },
+            "title": "Equity Curve",
+            "type": "array"
+          },
+          "fills": {
+            "items": {
+              "$ref": "#/components/schemas/SimulatedFill"
+            },
+            "title": "Fills",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/BacktestSummary"
+          }
+        },
+        "required": [
+          "summary",
+          "equity_curve",
+          "fills"
+        ],
+        "title": "BacktestResult",
+        "type": "object"
+      },
+      "BacktestRun": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/BacktestRequest"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "created_at",
+          "request"
+        ],
+        "title": "BacktestRun",
+        "type": "object"
+      },
+      "BacktestSummary": {
+        "properties": {
+          "bars": {
+            "title": "Bars",
+            "type": "integer"
+          },
+          "contract_id": {
+            "title": "Contract Id",
+            "type": "string"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "fills": {
+            "title": "Fills",
+            "type": "integer"
+          },
+          "final_equity": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Final Equity",
+            "type": "string"
+          },
+          "final_position_units": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Final Position Units",
+            "type": "string"
+          },
+          "gross_pnl": {
+            "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Gross Pnl",
+            "type": "string"
+          },
+          "input_file": {
+            "title": "Input File",
+            "type": "string"
+          },
+          "input_sha256": {
+            "title": "Input Sha256",
+            "type": "string"
+          },
+          "max_drawdown": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Max Drawdown",
+            "type": "string"
+          },
+          "max_drawdown_peak_time": {
+            "anyOf": [
+              {
+                "description": "UTC Unix seconds",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown Peak Time"
+          },
+          "max_drawdown_trough_time": {
+            "anyOf": [
+              {
+                "description": "UTC Unix seconds",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown Trough Time"
+          },
+          "net_pnl": {
+            "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Net Pnl",
+            "type": "string"
+          },
+          "total_fees": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Total Fees",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract_id",
+          "disclaimer",
+          "bars",
+          "fills",
+          "final_equity",
+          "final_position_units",
+          "gross_pnl",
+          "net_pnl",
+          "total_fees",
+          "max_drawdown",
+          "max_drawdown_peak_time",
+          "max_drawdown_trough_time",
+          "input_file",
+          "input_sha256"
+        ],
+        "title": "BacktestSummary",
+        "type": "object"
+      },
+      "Candle": {
+        "properties": {
+          "close": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Close",
+            "type": "string"
+          },
+          "high": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "High",
+            "type": "string"
+          },
+          "low": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Low",
+            "type": "string"
+          },
+          "open": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Open",
+            "type": "string"
+          },
+          "time": {
+            "description": "UTC Unix seconds",
+            "title": "Time",
+            "type": "integer"
+          },
+          "volume": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Volume",
+            "type": "string"
+          }
+        },
+        "required": [
+          "time",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "title": "Candle",
+        "type": "object"
+      },
+      "CandleList": {
+        "properties": {
+          "candles": {
+            "items": {
+              "$ref": "#/components/schemas/Candle"
+            },
+            "title": "Candles",
+            "type": "array"
+          },
+          "interval": {
+            "enum": [
+              "15m",
+              "1d"
+            ],
+            "title": "Interval",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "interval",
+          "candles"
+        ],
+        "title": "CandleList",
+        "type": "object"
+      },
+      "EquityPoint": {
+        "properties": {
+          "cash": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Cash",
+            "type": "string"
+          },
+          "close": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Close",
+            "type": "string"
+          },
+          "drawdown": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Drawdown",
+            "type": "string"
+          },
+          "equity": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Equity",
+            "type": "string"
+          },
+          "peak": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Peak",
+            "type": "string"
+          },
+          "position_units": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Position Units",
+            "type": "string"
+          },
+          "time": {
+            "description": "UTC Unix seconds",
+            "title": "Time",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "time",
+          "cash",
+          "position_units",
+          "close",
+          "equity",
+          "peak",
+          "drawdown"
+        ],
+        "title": "EquityPoint",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "format": "password",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "username": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "LoginResponse": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "token_type": {
+            "const": "bearer",
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/Admin"
+          }
+        },
+        "required": [
+          "access_token",
+          "expires_in",
+          "user"
+        ],
+        "title": "LoginResponse",
+        "type": "object"
+      },
+      "SimulatedFill": {
+        "properties": {
+          "cash_after": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Cash After",
+            "type": "string"
+          },
+          "fee": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Fee",
+            "type": "string"
+          },
+          "fill_time": {
+            "description": "UTC Unix seconds",
+            "title": "Fill Time",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "notional": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Notional",
+            "type": "string"
+          },
+          "price": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Price",
+            "type": "string"
+          },
+          "side": {
+            "enum": [
+              "BUY",
+              "SELL"
+            ],
+            "title": "Side",
+            "type": "string"
+          },
+          "signal_time": {
+            "description": "UTC Unix seconds",
+            "title": "Signal Time",
+            "type": "integer"
+          },
+          "units": {
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Units",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "signal_time",
+          "fill_time",
+          "side",
+          "units",
+          "price",
+          "notional",
+          "fee",
+          "cash_after"
+        ],
+        "title": "SimulatedFill",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Server-only API for the Next.js BFF. Synthetic data and simulated fills only.",
+    "title": "QuantTrading Private API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid credentials or expired, revoked, or missing session"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid credentials or expired, revoked, or missing session"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "operationId": "me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Admin"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid credentials or expired, revoked, or missing session"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/backtests": {
+      "get": {
+        "operationId": "list_backtests_api_v1_backtests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid credentials or expired, revoked, or missing session"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Backtests",
+        "tags": [
+          "backtests"
+        ]
+      },
+      "post": {
+        "operationId": "create_backtest_api_v1_backtests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BacktestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestRun"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid credentials or expired, revoked, or missing session"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "Backtest queue unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Backtest",
+        "tags": [
+          "backtests"
+        ]
+      }
+    },
+    "/api/v1/backtests/{id}": {
+      "get": {
+        "operationId": "get_backtest_api_v1_backtests__id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid credentials or expired, revoked, or missing session"
+          },
+          "404": {
+            "description": "Resource not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Backtest",
+        "tags": [
+          "backtests"
+        ]
+      }
+    },
+    "/api/v1/candles": {
+      "get": {
+        "operationId": "candles_api_v1_candles_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "symbol",
+            "required": false,
+            "schema": {
+              "default": "SYNTH",
+              "pattern": "^[A-Z0-9._-]{1,16}$",
+              "title": "Symbol",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "interval",
+            "required": false,
+            "schema": {
+              "default": "15m",
+              "enum": [
+                "15m",
+                "1d"
+              ],
+              "title": "Interval",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandleList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid credentials or expired, revoked, or missing session"
+          },
+          "404": {
+            "description": "Resource not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Candles",
+        "tags": [
+          "candles"
+        ]
+      }
+    }
+  }
+}
