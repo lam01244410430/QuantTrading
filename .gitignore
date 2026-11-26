@@ -6,3 +6,13 @@ __pycache__/
 /build/
 /dist/
 /out/
+/web/node_modules/
+/web/.next/
+/web/out/
+/web/next-env.d.ts
+*.tsbuildinfo
+/.quanttrading-data/
+*.db
+*.db-shm
+*.db-wal
+

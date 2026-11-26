@@ -1,0 +1,15 @@
+{
+  "name": "QuantTrading Dashboard",
+  "short_name": "QuantTrading",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8f9fa",
+  "theme_color": "#1e3a5f",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
