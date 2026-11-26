@@ -53,9 +53,12 @@ services:
         condition: service_healthy
   api:
     <<: *backend
-    command: [python, -m, uvicorn, backend.main:app, --host, 0.0.0.0, --port, "8000", --no-access-log]
+    command: [python, -m, uvicorn, backend.main:app, --host, 0.0.0.0, --port, "8000", --no-access-log, --no-proxy-headers]
     environment:
       <<: [*worker-env, *admin-env]
+      QT_LOGIN_LIMIT: ${QT_LOGIN_LIMIT:-10}
+      QT_LOGIN_WINDOW_SECONDS: ${QT_LOGIN_WINDOW_SECONDS:-60}
+      QT_TRUSTED_PROXY_CIDRS: ${QT_TRUSTED_PROXY_CIDRS:-}
     ports:
       - "127.0.0.1:${QT_API_PORT:-8000}:8000"
     depends_on:

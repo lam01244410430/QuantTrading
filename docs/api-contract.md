@@ -28,8 +28,26 @@ authenticated requests. Do not expose this origin or bearer token via
 This slice has a single environment-seeded administrator; no registration,
 public accounts or user-supplied exchange credentials. PostgreSQL stores
 only a salted scrypt password hash and a SHA-256 digest of the random JWT
-session ID, never the raw password or bearer. There is no API login throttle
-in this loopback-only slice.
+session ID, never the raw password or bearer.
+
+Validly shaped login requests (including successful logins) count toward
+the Redis fixed window. By default the limit is 10 per client and 120
+across clients per 60 seconds. Once limited, the API returns `429` with
+`{"detail":"Too many login attempts"}` and a `Retry-After` header in whole
+seconds. The BFF may relay those to the browser. If the rate-limit store is
+unavailable, or the process already has two login attempts in progress,
+login fails closed with `503` and
+`{"detail":"Login temporarily unavailable"}`. Requests rejected by either
+guard do not run the password hash.
+
+Client identity is the connection peer by default. With explicitly
+configured trusted proxy CIDRs, the API uses the rightmost untrusted IP
+in the trusted peer's `X-Forwarded-For` chain, parsing at most the last
+2048 header bytes. If no client can be determined, requests from trusted
+peers share one invalid-forwarding bucket. Proxies must append the actual
+connecting address or replace the incoming header. With no trusted
+proxies configured, all forwarded headers are ignored; requests from one
+BFF peer share that peer's limit.
 
 ## Candles and backtest runs
 
