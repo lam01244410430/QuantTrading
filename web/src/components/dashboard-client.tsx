@@ -238,6 +238,7 @@ export function DashboardClient({
             return;
           }
           if (detail.status === "failed") {
+            setCandles([]);
             setErrorMessage(detail.error ?? "Backtest execution failed.");
             await refreshRunsList(controller.signal);
             return;
@@ -314,6 +315,7 @@ export function DashboardClient({
         error: null,
       };
       setActiveRun(stubDetail);
+      setCandles([]);
       setRuns((prev) => [created, ...prev.filter((r) => r.id !== created.id)].slice(0, 20));
 
       if (created.status === "queued" || created.status === "running") {
@@ -360,8 +362,10 @@ export function DashboardClient({
       if (detail.status === "succeeded") {
         await loadCandlesForRun(detail);
       } else if (detail.status === "queued" || detail.status === "running") {
+        setCandles([]);
         void pollRunUntilTerminal(detail.id);
       } else if (detail.status === "failed") {
+        setCandles([]);
         setErrorMessage(detail.error ?? "Backtest execution failed.");
       }
     } catch {
@@ -705,7 +709,7 @@ export function DashboardClient({
           </div>
 
           <TradingCharts
-            candles={candles}
+            candles={activeRun?.status === "succeeded" ? candles : []}
             symbol={activeSymbol}
             interval={activeInterval}
             fills={fills}
