@@ -47,9 +47,10 @@ export function validateBacktestRequest(
       issues.push({
         code: "E102_BAD_PARAMETER",
         row: 0,
-        column: key,
-        message: `Unexpected parameter: ${key}.`,
+        column: "request",
+        message: "Unexpected parameter.",
       });
+      break;
     }
   }
 

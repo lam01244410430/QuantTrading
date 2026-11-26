@@ -535,14 +535,31 @@ describe("BFF route handlers security, auth, and contract parity", () => {
     );
     expect(nullFieldRes.status).toBe(422);
 
+    const longUnknownKey = `unexpected_${"k".repeat(4096)}`;
     const extraFieldRes = await runsPost(
       new Request("https://app.example.com/api/runs", {
         method: "POST",
         headers: SAME_ORIGIN_HEADERS,
-        body: JSON.stringify({ unexpected: "1" }),
+        body: JSON.stringify({ unexpected: "1", [longUnknownKey]: "2" }),
       })
     );
     expect(extraFieldRes.status).toBe(422);
+    expect(extraFieldRes.headers.get("cache-control")).toBe("no-store");
+    const extraFieldText = await extraFieldRes.text();
+    expect(extraFieldText).not.toContain("unexpected");
+    expect(extraFieldText).not.toContain(longUnknownKey);
+    expect(JSON.parse(extraFieldText)).toEqual({
+      ok: false,
+      error: "Invalid backtest parameters",
+      errors: [
+        {
+          code: "E102_BAD_PARAMETER",
+          row: 0,
+          column: "request",
+          message: "Unexpected parameter.",
+        },
+      ],
+    });
     expect(forwardedBodies).toHaveLength(2);
   });
 });

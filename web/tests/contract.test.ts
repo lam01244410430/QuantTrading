@@ -58,6 +58,19 @@ describe("ohlc-signal/v2.1.1 parameter validation", () => {
     expect(validateBacktestRequest({ symbol: 123 }).valid).toBe(false);
     expect(validateBacktestRequest({ interval: null }).valid).toBe(false);
     expect(validateBacktestRequest({ unknown_field: "x" }).valid).toBe(false);
+
+    const longUnknownKey = `secret_${"x".repeat(4096)}`;
+    const unknownRes = validateBacktestRequest({ [longUnknownKey]: "1" });
+    expect(unknownRes.valid).toBe(false);
+    expect(JSON.stringify(unknownRes.issues)).not.toContain(longUnknownKey);
+    expect(unknownRes.issues).toEqual([
+      {
+        code: "E102_BAD_PARAMETER",
+        row: 0,
+        column: "request",
+        message: "Unexpected parameter.",
+      },
+    ]);
   });
 
   it("rejects out-of-bounds capital, position size, fee rate, symbol, and interval", () => {
