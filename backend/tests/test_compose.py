@@ -10,7 +10,7 @@ import httpx
 import jwt
 import pytest
 from arq import create_pool
-from sqlalchemy import insert, select, text, update
+from sqlalchemy import delete, insert, select, text, update
 
 from backend import auth, runs
 from backend.database import admins, backtests, create_engine, sessions
@@ -56,6 +56,17 @@ def database(operation):
             await engine.dispose()
 
     return asyncio.run(execute())
+
+
+@pytest.fixture
+def test_runs():
+    ids = []
+    yield ids
+    if ids:
+        async def remove_runs(connection):
+            await connection.execute(delete(backtests).where(backtests.c.id.in_(ids)))
+
+        database(remove_runs)
 
 
 def test_auth_verifies_claims_and_persisted_session(client):
@@ -135,13 +146,14 @@ def terminal_result(client, headers, rid):
 
 
 @pytest.mark.parametrize("interval", ["1d", "15m"])
-def test_enqueue_worker_and_chart_result(client, headers, interval):
+def test_enqueue_worker_and_chart_result(client, headers, interval, test_runs):
     assert client.post("/backtests", json={"interval": interval}).status_code == 401
     response = client.post("/backtests", headers=headers, json={"interval": interval})
     assert response.status_code == 202
     run = response.json()
-    assert run["status"] == "queued"
     rid = run["id"]
+    test_runs.append(UUID(rid))
+    assert run["status"] == "queued"
     listing = client.get("/backtests", headers=headers).json()["runs"]
     assert rid in {row["id"] for row in listing}
     result = terminal_result(client, headers, rid)
@@ -173,15 +185,18 @@ def test_enqueue_worker_and_chart_result(client, headers, interval):
     assert client.get(f"/backtests/{rid}", headers=headers).json() == result
 
 
-def test_failed_simulation_persists_error(client, headers):
+def test_failed_simulation_persists_error(client, headers, test_runs):
     response = client.post("/backtests", headers=headers, json={"starting_capital": "1.00"})
     assert response.status_code == 202
-    data = terminal_result(client, headers, response.json()["id"])
+    rid = response.json()["id"]
+    test_runs.append(UUID(rid))
+    data = terminal_result(client, headers, rid)
     assert (data["status"], data["error"], data["result"]) == ("failed", "E101_INSUFFICIENT_CASH", None)
 
 
-def test_worker_reconciles_lost_jobs_without_api_read():
+def test_worker_reconciles_lost_jobs_without_api_read(test_runs):
     queued, running = uuid4(), uuid4()
+    test_runs.extend([queued, running])
 
     async def insert_stale_runs(connection):
         now = datetime.now(timezone.utc)
