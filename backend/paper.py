@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal, localcontext
+from functools import cache
 from uuid import UUID, uuid4
 
 from redis.exceptions import ResponseError
@@ -28,6 +29,11 @@ class InvalidCandleEvent(ValueError):
 
 def replay_source():
     return [row for row in fixture_rows() if row["timeframe"] == "15m"]
+
+
+@cache
+def replay_start():
+    return next(row["open_ts"] for row in fixture_rows() if row["timeframe"] == "15m")
 
 
 def identity(row):
@@ -126,7 +132,7 @@ async def process_event(engine, event_id):
         previous = await connection.scalar(select(candles.c.signal).where(
             matches(candles, prior), candles.c.is_closed.is_(True),
         ))
-        if previous is None and current["open_ts"] != replay_source()[0]["open_ts"]:
+        if previous is None and current["open_ts"] != replay_start():
             raise InvalidCandleEvent("candle_gap")
         side = strategy_side(previous or 0, signal)
         if side is not None:
