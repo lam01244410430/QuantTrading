@@ -1,0 +1,106 @@
+x-backend: &backend
+  image: quanttrading-backend:local
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+    target: runtime
+    args:
+      PYTHON_IMAGE: ${QT_PYTHON_IMAGE:-python:3.12-slim}
+
+x-database-env: &database-env
+  QT_DATABASE_URL: postgresql+asyncpg://quanttrading:${QT_POSTGRES_PASSWORD:?set QT_POSTGRES_PASSWORD}@postgres:5432/quanttrading
+
+x-worker-env: &worker-env
+  <<: *database-env
+  QT_REDIS_URL: redis://redis:6379/0
+
+x-admin-env: &admin-env
+  QT_ADMIN_USERNAME: ${QT_ADMIN_USERNAME:-admin}
+  QT_JWT_SECRET: ${QT_JWT_SECRET:?set QT_JWT_SECRET}
+
+services:
+  postgres:
+    image: ${QT_TIMESCALE_IMAGE:-timescale/timescaledb:2.19.3-pg16}
+    environment:
+      POSTGRES_DB: quanttrading
+      POSTGRES_USER: quanttrading
+      POSTGRES_PASSWORD: ${QT_POSTGRES_PASSWORD:?set QT_POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: ${QT_REDIS_IMAGE:-redis:7.4-alpine}
+    command: [redis-server, --appendonly, "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  migrate:
+    <<: *backend
+    command: [sh, -ec, "python -m alembic -c backend/alembic.ini upgrade head && python -m backend.seed"]
+    environment:
+      <<: [*database-env, *admin-env]
+      QT_ADMIN_PASSWORD: ${QT_ADMIN_PASSWORD:?set QT_ADMIN_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+  api:
+    <<: *backend
+    command: [python, -m, uvicorn, backend.main:app, --host, 0.0.0.0, --port, "8000", --no-access-log]
+    environment:
+      <<: [*worker-env, *admin-env]
+    ports:
+      - "127.0.0.1:${QT_API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/healthz', timeout=2).close()"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  worker:
+    <<: *backend
+    command: [python, -m, arq, backend.arq_settings.WorkerSettings]
+    environment: *worker-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -m, arq, --check, backend.arq_settings.WorkerSettings]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  tests:
+    profiles: [test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+      args:
+        PYTHON_IMAGE: ${QT_PYTHON_IMAGE:-python:3.12-slim}
+    command: [python, -m, pytest, -q, -p, no:cacheprovider, backend/tests]
+    environment:
+      <<: [*worker-env, *admin-env]
+      QT_ADMIN_PASSWORD: ${QT_ADMIN_PASSWORD:?set QT_ADMIN_PASSWORD}
+      QT_TEST_API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:
