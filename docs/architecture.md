@@ -89,6 +89,12 @@ unless that peer matches an explicitly trusted proxy CIDR; only trust
 proxies that append or replace the header with the real upstream address.
 See the [API contract](api-contract.md). This does not authorize hosting.
 
+Before hosting the BFF, configure its backend-facing address as a trusted
+proxy in `QT_TRUSTED_PROXY_CIDRS`. Without that setting, all BFF login
+requests share the BFF's peer limit. The BFF must overwrite
+`X-Forwarded-For` with the real connecting peer address from its socket;
+it must not forward the incoming client's header.
+
 Paper first. Exchange testnet is a separate explicitly authorized stage;
 only after verification and explicit owner approval could a separate
 production live gate be designed and enabled. Keep live disabled by

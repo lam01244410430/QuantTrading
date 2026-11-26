@@ -89,6 +89,9 @@ the client limit and window. Redis unavailability blocks new logins with
 trusted proxies that append the real source address or replace
 `X-Forwarded-For`. When enabled, list only those proxy IPs or CIDRs
 (comma separated). Keep Uvicorn's `--no-proxy-headers` enabled.
+Before hosting the BFF, add its backend-facing address to the trusted
+list and have it overwrite `X-Forwarded-For` with the actual socket peer,
+not the incoming client's header. Otherwise all BFF logins share one limit.
 
 ### Run the synthetic paper replay
 
