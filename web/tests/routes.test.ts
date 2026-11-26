@@ -176,20 +176,23 @@ describe("BFF route handlers security, auth, and contract parity", () => {
     expect(body.ok).toBe(false);
   });
 
-  it("login enforces BFF rate limiting after repeated failed attempts without calling upstream", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ detail: "invalid" }), {
+  it("login enforces BFF rate limiting without forwarding or trusting spoofable X-Forwarded-For headers", async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      expect(headers["X-Forwarded-For"]).toBeUndefined();
+      expect(headers["x-forwarded-for"]).toBeUndefined();
+      return new Response(JSON.stringify({ detail: "invalid" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
-      })
-    );
+      });
+    });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     for (let i = 0; i < 10; i += 1) {
       const res = await loginPost(
         new Request("https://app.example.com/api/auth/login", {
           method: "POST",
-          headers: { ...SAME_ORIGIN_HEADERS, "x-forwarded-for": "203.0.113.5" },
+          headers: { ...SAME_ORIGIN_HEADERS, "x-forwarded-for": `203.0.113.${i + 1}` },
           body: JSON.stringify({ username: "admin", password: "wrong" }),
         })
       );
@@ -201,13 +204,46 @@ describe("BFF route handlers security, auth, and contract parity", () => {
     const blockedRes = await loginPost(
       new Request("https://app.example.com/api/auth/login", {
         method: "POST",
-        headers: { ...SAME_ORIGIN_HEADERS, "x-forwarded-for": "203.0.113.5" },
+        headers: { ...SAME_ORIGIN_HEADERS, "x-forwarded-for": "198.51.100.99" },
         body: JSON.stringify({ username: "admin", password: "wrong" }),
       })
     );
     expect(blockedRes.status).toBe(429);
     expect(blockedRes.headers.get("cache-control")).toBe("no-store");
     expect(Number(blockedRes.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledTimes(10);
+  });
+
+  it("login rate limiter prevents concurrent in-flight requests from bypassing the limit", async () => {
+    let releaseUpstream!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseUpstream = resolve;
+    });
+
+    const fetchMock = vi.fn(async () => {
+      await gate;
+      return new Response(JSON.stringify({ detail: "invalid" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const pending = Array.from({ length: 12 }, () =>
+      loginPost(
+        new Request("https://app.example.com/api/auth/login", {
+          method: "POST",
+          headers: SAME_ORIGIN_HEADERS,
+          body: JSON.stringify({ username: "admin", password: "wrong" }),
+        })
+      )
+    );
+
+    releaseUpstream();
+    const responses = await Promise.all(pending);
+    const statuses = responses.map((r) => r.status);
+    expect(statuses.filter((s) => s === 401)).toHaveLength(10);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(2);
     expect(fetchMock).toHaveBeenCalledTimes(10);
   });
 

@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { loginAdmin, SESSION_COOKIE_NAME } from "@/lib/backend";
 import { isSecureRequest, verifySameOrigin } from "@/lib/csrf";
 import {
-  checkLoginRateLimit,
   clearLoginRateLimit,
-  recordFailedLoginAttempt,
+  consumeLoginAttempt,
+  refundLoginAttempt,
 } from "@/lib/rate-limit";
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
@@ -58,13 +58,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const clientIp =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip")?.trim() ||
-    null;
-  const rateLimitKey = clientIp || "unknown";
-
-  const limitCheck = checkLoginRateLimit(rateLimitKey);
+  // Single-admin sign-in rate limit: O(1) storage, no spoofable forwarding headers,
+  // and synchronous slot reservation before awaiting upstream auth so concurrent requests cannot bypass it.
+  const limitCheck = consumeLoginAttempt();
   if (!limitCheck.allowed) {
     return NextResponse.json(
       { ok: false, error: safeLoginError(429) },
@@ -78,13 +74,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = await loginAdmin(username, password, clientIp);
+  const result = await loginAdmin(username, password);
 
   // Never proxy raw upstream login 422/error bodies (could echo password/input)
   // and never return access_token in any JSON response.
   if (!result.ok || !result.data) {
-    if (result.status === 401 || result.status === 422 || result.status === 400) {
-      recordFailedLoginAttempt(rateLimitKey);
+    if (result.status >= 500) {
+      refundLoginAttempt(limitCheck.token);
     }
     const status = result.status === 422 ? 401 : result.status;
     const headers: Record<string, string> = { ...NO_STORE_HEADERS };
@@ -97,7 +93,7 @@ export async function POST(request: Request) {
     );
   }
 
-  clearLoginRateLimit(rateLimitKey);
+  clearLoginRateLimit();
 
   const token = result.data.access_token;
   if (!token || typeof result.data.expires_in !== "number") {

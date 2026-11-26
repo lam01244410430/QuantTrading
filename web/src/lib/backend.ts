@@ -34,7 +34,6 @@ export async function backendFetch<T>(
     method?: "GET" | "POST" | "DELETE";
     sessionToken?: string | null;
     body?: unknown;
-    clientIp?: string | null;
     fetchImpl?: typeof fetch;
   } = {}
 ): Promise<BackendResult<T>> {
@@ -48,9 +47,6 @@ export async function backendFetch<T>(
   }
   if (options.sessionToken) {
     headers["Authorization"] = `Bearer ${options.sessionToken}`;
-  }
-  if (options.clientIp) {
-    headers["X-Forwarded-For"] = options.clientIp;
   }
 
   const controller = new AbortController();
@@ -134,7 +130,6 @@ export async function fetchCurrentAdmin(
 export async function loginAdmin(
   username: string,
   password: string,
-  clientIp?: string | null,
   fetchImpl?: typeof fetch
 ): Promise<
   BackendResult<{
@@ -147,7 +142,6 @@ export async function loginAdmin(
   return backendFetch("/api/v1/auth/login", {
     method: "POST",
     body: { username, password },
-    clientIp,
     fetchImpl,
   });
 }

@@ -91,9 +91,11 @@ describe("backend client (API contract v0.1.0)", () => {
       return new Response("not found", { status: 404 });
     }) as unknown as typeof fetch;
 
-    const loginRes = await loginAdmin("admin", "pw", "127.0.0.1", mockFetch);
+    const loginRes = await loginAdmin("admin", "pw", mockFetch);
     expect(loginRes.ok).toBe(true);
     expect(loginRes.data?.access_token).toBe("jwt-secret-token");
+    const loginHeaders = calls[0].init?.headers as Record<string, string>;
+    expect(loginHeaders["X-Forwarded-For"]).toBeUndefined();
 
     const me = await fetchCurrentAdmin("jwt-secret-token", mockFetch);
     expect(me).toEqual({ user: { username: "admin", role: "admin" }, unauthorized: false });
