@@ -22,8 +22,11 @@ part of the first slice.
 The on-demand local stages are `replay → relay → strategy → execute`.
 The collector uses only the fixture-derived 15m series, backfills gaps from
 that same source, and writes a unique close event alongside each candle in
-one PostgreSQL transaction. A restarted relay retries unpublished rows;
-duplicates carry the same event ID. The Redis Streams group reclaims
+one PostgreSQL transaction. A restarted relay retries unpublished rows and
+republishes rows still neither processed nor quarantined after 120 seconds
+(configurable with `relay --relay-ack-timeout`). Duplicates carry the same
+event ID. Redis uses AOF with one-second fsync; the outbox retry covers
+stream writes lost before fsync. The Redis Streams group reclaims
 entries idle for at least 30 seconds. The strategy commits its processed
 event ID and optional one-unit paper order atomically before acknowledging.
 Invalid events do not stop later deliveries. After three deliveries by

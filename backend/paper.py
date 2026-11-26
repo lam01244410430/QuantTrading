@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, localcontext
 from functools import cache
 from uuid import UUID, uuid4
@@ -20,6 +20,7 @@ GROUP = "paper-strategy"
 EVENT_TYPE = "candle.closed"
 STEP = timedelta(minutes=15)
 MAX_DELIVERIES = 3
+RELAY_ACK_TIMEOUT = 120
 PAPER_FEE_RATE = Decimal(DEFAULT_FEE_RATE)
 
 
@@ -91,10 +92,20 @@ def event_fields(row):
     return {"type": EVENT_TYPE, "event_id": str(row["id"]), **data}
 
 
-async def relay_next(engine, redis, stream=STREAM):
+async def relay_next(engine, redis, stream=STREAM, *, ack_timeout=RELAY_ACK_TIMEOUT, as_of=None):
+    if ack_timeout < 1:
+        raise ValueError("ack_timeout must be at least 1 second")
+    cutoff = (as_of or datetime.now(timezone.utc)) - timedelta(seconds=ack_timeout)
+    done = select(processed_candle_events.c.event_id).where(
+        processed_candle_events.c.event_id == candle_outbox.c.id,
+    ).exists()
+    quarantined = select(candle_dead_letters.c.event_id).where(
+        candle_dead_letters.c.event_id == candle_outbox.c.id,
+    ).exists()
     async with engine.begin() as connection:
         cursor = await connection.execute(select(candle_outbox).where(
-            candle_outbox.c.published_at.is_(None),
+            or_(candle_outbox.c.published_at.is_(None), candle_outbox.c.published_at <= cutoff),
+            ~done, ~quarantined,
         ).order_by(candle_outbox.c.open_ts, candle_outbox.c.id).limit(1).with_for_update(skip_locked=True))
         event = cursor.mappings().one_or_none()
         if event is None:
@@ -179,8 +190,9 @@ async def consume(engine, redis, consumer, stream=STREAM, reclaim_idle_ms=30_000
 def parse_message(values):
     try:
         message = {redis_text(key): redis_text(value) for key, value in values.items()}
-        event_id = UUID(message["event_id"])
-        return event_id, None if message.get("type") == EVENT_TYPE else "invalid_event_type"
+        if message.get("type") != EVENT_TYPE:
+            return None, "invalid_event_type"
+        return UUID(message["event_id"]), None
     except (KeyError, ValueError):
         return None, "invalid_event_payload"
 

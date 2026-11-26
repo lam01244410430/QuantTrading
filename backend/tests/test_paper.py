@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from os import environ
 from subprocess import run
@@ -7,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 from arq import create_pool
-from sqlalchemy import func, insert, select, text
+from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -182,6 +183,40 @@ def test_poison_event_does_not_block_and_is_quarantined(replay_database):
             )
             assert (await redis.xpending(stream, paper.GROUP))["pending"] == 0
             assert await count(engine, processed_candle_events) == 1
+            assert not await paper.relay_next(engine, redis, stream)
+        finally:
+            await redis.delete(stream)
+            await redis.aclose()
+            await engine.dispose()
+
+    asyncio.run(test())
+
+
+@pytest.mark.skipif(not environ.get("QT_TEST_API_URL"), reason="requires Compose TimescaleDB and Redis")
+def test_relay_recovers_a_lost_stream_write(replay_database):
+    async def test():
+        engine = create_async_engine(replay_database)
+        redis = await create_pool(runs.redis_settings())
+        stream = f"{paper.STREAM}:test:{uuid4()}"
+        try:
+            source = paper.replay_source()
+            assert await paper.replay_candle(engine, source[0], source) == 1
+            assert await paper.relay_next(engine, redis, stream)
+            [(lost_id, payload)] = await redis.xrange(stream)
+            assert await redis.xdel(stream, lost_id) == 1
+            assert not await paper.relay_next(engine, redis, stream)
+            async with engine.begin() as connection:
+                await connection.execute(update(candle_outbox).values(
+                    published_at=datetime.now(timezone.utc) - timedelta(seconds=2),
+                ))
+            assert await paper.relay_next(engine, redis, stream, ack_timeout=1)
+            [(recovered_id, recovered_payload)] = await redis.xrange(stream)
+            assert recovered_id != lost_id
+            assert payload == recovered_payload
+            assert await paper.consume(engine, redis, "recovered", stream) == 1
+            assert await count(engine, paper_orders) == 1
+            as_of = datetime.now(timezone.utc) + timedelta(seconds=2)
+            assert not await paper.relay_next(engine, redis, stream, ack_timeout=1, as_of=as_of)
         finally:
             await redis.delete(stream)
             await redis.aclose()
