@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SESSION_COOKIE_NAME } from "@/lib/backend";
-import { resetLoginRateLimitForTests } from "@/lib/rate-limit";
+import { runWithSocketPeer } from "@/lib/peer";
 
 let mockedCookieValue: string | undefined;
 
@@ -34,7 +34,6 @@ describe("BFF route handlers security, auth, and contract parity", () => {
   beforeEach(() => {
     mockedCookieValue = undefined;
     process.env.QUANTTRADING_API_URL = "http://127.0.0.1:8000";
-    resetLoginRateLimitForTests();
   });
 
   afterEach(() => {
@@ -176,60 +175,61 @@ describe("BFF route handlers security, auth, and contract parity", () => {
     expect(body.ok).toBe(false);
   });
 
-  it("login enforces BFF rate limiting without forwarding or trusting spoofable X-Forwarded-For headers", async () => {
-    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
-      const headers = (init?.headers ?? {}) as Record<string, string>;
-      expect(headers["X-Forwarded-For"]).toBeUndefined();
-      expect(headers["x-forwarded-for"]).toBeUndefined();
+  it("login overwrites X-Forwarded-For with real socket peer and NEVER passes client headers through", async () => {
+    const seenHeaders: Array<Record<string, string>> = [];
+    globalThis.fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      seenHeaders.push((init?.headers ?? {}) as Record<string, string>);
       return new Response(JSON.stringify({ detail: "invalid" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       });
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    }) as unknown as typeof fetch;
 
-    for (let i = 0; i < 10; i += 1) {
-      const res = await loginPost(
+    // With a bound real socket peer (IPv4-mapped IPv6), X-Forwarded-For is overwritten
+    // with the normalized real peer, completely ignoring spoofed incoming headers.
+    const res1 = await runWithSocketPeer("::ffff:198.51.100.7", () =>
+      loginPost(
         new Request("https://app.example.com/api/auth/login", {
           method: "POST",
-          headers: { ...SAME_ORIGIN_HEADERS, "x-forwarded-for": `203.0.113.${i + 1}` },
+          headers: {
+            ...SAME_ORIGIN_HEADERS,
+            "x-forwarded-for": "203.0.113.1, 10.0.0.1",
+            "x-real-ip": "203.0.113.2",
+          },
           body: JSON.stringify({ username: "admin", password: "wrong" }),
         })
-      );
-      expect(res.status).toBe(401);
-    }
+      )
+    );
+    expect(res1.status).toBe(401);
+    expect(seenHeaders[0]["X-Forwarded-For"]).toBe("198.51.100.7");
 
-    expect(fetchMock).toHaveBeenCalledTimes(10);
-
-    const blockedRes = await loginPost(
+    // Without a bound socket peer (e.g. if started without server.mjs),
+    // client-supplied X-Forwarded-For / X-Real-IP are still NEVER forwarded.
+    const res2 = await loginPost(
       new Request("https://app.example.com/api/auth/login", {
         method: "POST",
-        headers: { ...SAME_ORIGIN_HEADERS, "x-forwarded-for": "198.51.100.99" },
+        headers: {
+          ...SAME_ORIGIN_HEADERS,
+          "x-forwarded-for": "203.0.113.99",
+          "x-real-ip": "203.0.113.99",
+        },
         body: JSON.stringify({ username: "admin", password: "wrong" }),
       })
     );
-    expect(blockedRes.status).toBe(429);
-    expect(blockedRes.headers.get("cache-control")).toBe("no-store");
-    expect(Number(blockedRes.headers.get("retry-after"))).toBeGreaterThan(0);
-    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(res2.status).toBe(401);
+    expect(seenHeaders[1]["X-Forwarded-For"]).toBeUndefined();
+    expect(seenHeaders[1]["x-forwarded-for"]).toBeUndefined();
   });
 
-  it("login rate limiter prevents concurrent in-flight requests from bypassing the limit", async () => {
-    let releaseUpstream!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      releaseUpstream = resolve;
-    });
-
-    const fetchMock = vi.fn(async () => {
-      await gate;
-      return new Response(JSON.stringify({ detail: "invalid" }), {
-        status: 401,
+  it("login propagates upstream 503 outage with no-store and safe error text", async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ detail: "Login temporarily unavailable" }), {
+        status: 503,
         headers: { "Content-Type": "application/json" },
-      });
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+      })
+    ) as unknown as typeof fetch;
 
-    const pending = Array.from({ length: 12 }, () =>
+    const res = await runWithSocketPeer("198.51.100.10", () =>
       loginPost(
         new Request("https://app.example.com/api/auth/login", {
           method: "POST",
@@ -238,13 +238,12 @@ describe("BFF route handlers security, auth, and contract parity", () => {
         })
       )
     );
-
-    releaseUpstream();
-    const responses = await Promise.all(pending);
-    const statuses = responses.map((r) => r.status);
-    expect(statuses.filter((s) => s === 401)).toHaveLength(10);
-    expect(statuses.filter((s) => s === 429)).toHaveLength(2);
-    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(res.status).toBe(503);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.json()).toEqual({
+      ok: false,
+      error: "Authentication service is unavailable.",
+    });
   });
 
   it("rejects cross-origin POST on login, logout, and runs with 403", async () => {

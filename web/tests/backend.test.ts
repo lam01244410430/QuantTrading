@@ -91,11 +91,19 @@ describe("backend client (API contract v0.1.0)", () => {
       return new Response("not found", { status: 404 });
     }) as unknown as typeof fetch;
 
-    const loginRes = await loginAdmin("admin", "pw", mockFetch);
+    const loginRes = await loginAdmin("admin", "pw", { fetchImpl: mockFetch });
     expect(loginRes.ok).toBe(true);
     expect(loginRes.data?.access_token).toBe("jwt-secret-token");
     const loginHeaders = calls[0].init?.headers as Record<string, string>;
     expect(loginHeaders["X-Forwarded-For"]).toBeUndefined();
+
+    const peerLoginRes = await loginAdmin("admin", "pw", {
+      clientPeerIp: "::ffff:198.51.100.7",
+      fetchImpl: mockFetch,
+    });
+    expect(peerLoginRes.ok).toBe(true);
+    const peerLoginHeaders = calls[1].init?.headers as Record<string, string>;
+    expect(peerLoginHeaders["X-Forwarded-For"]).toBe("198.51.100.7");
 
     const me = await fetchCurrentAdmin("jwt-secret-token", mockFetch);
     expect(me).toEqual({ user: { username: "admin", role: "admin" }, unauthorized: false });
@@ -125,6 +133,7 @@ describe("backend client (API contract v0.1.0)", () => {
 
     expect(calls.map((c) => c.url)).toEqual([
       "http://api.internal:8000/api/v1/auth/login",
+      "http://api.internal:8000/api/v1/auth/login",
       "http://api.internal:8000/api/v1/auth/me",
       "http://api.internal:8000/api/v1/backtests",
       "http://api.internal:8000/api/v1/backtests?limit=20",
@@ -134,8 +143,8 @@ describe("backend client (API contract v0.1.0)", () => {
     ]);
 
     // Authenticated calls send Authorization: Bearer
-    const authHeaders = calls[1].init?.headers as Record<string, string>;
+    const authHeaders = calls[2].init?.headers as Record<string, string>;
     expect(authHeaders["Authorization"]).toBe("Bearer jwt-secret-token");
-    expect(calls[1].init?.cache).toBe("no-store");
+    expect(calls[2].init?.cache).toBe("no-store");
   });
 });

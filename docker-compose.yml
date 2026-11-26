@@ -58,9 +58,12 @@ services:
       <<: [*worker-env, *admin-env]
       QT_LOGIN_LIMIT: ${QT_LOGIN_LIMIT:-10}
       QT_LOGIN_WINDOW_SECONDS: ${QT_LOGIN_WINDOW_SECONDS:-60}
-      QT_TRUSTED_PROXY_CIDRS: ${QT_TRUSTED_PROXY_CIDRS:-}
+      QT_TRUSTED_PROXY_CIDRS: ${QT_TRUSTED_PROXY_CIDRS:-172.30.0.10/32}
     ports:
       - "127.0.0.1:${QT_API_PORT:-8000}:8000"
+    networks:
+      default: {}
+      bff: {}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -69,6 +72,30 @@ services:
     healthcheck:
       test: [CMD, python, -c, "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/healthz', timeout=2).close()"]
       interval: 2s
+      timeout: 3s
+      retries: 30
+  web:
+    image: quanttrading-web:local
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: ${QT_NODE_IMAGE:-node:24-alpine}
+    environment:
+      QUANTTRADING_API_URL: http://api:8000
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+    ports:
+      - "127.0.0.1:${QT_WEB_PORT:-3000}:3000"
+    networks:
+      bff:
+        ipv4_address: ${QT_WEB_BFF_IP:-172.30.0.10}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/health').then((r)=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 3s
       timeout: 3s
       retries: 30
   worker:
@@ -103,6 +130,13 @@ services:
         condition: service_healthy
       worker:
         condition: service_healthy
+
+networks:
+  bff:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${QT_BFF_SUBNET:-172.30.0.0/28}
 
 volumes:
   postgres-data:
