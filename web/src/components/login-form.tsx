@@ -76,7 +76,7 @@ export function LoginForm() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            <form method="post" onSubmit={handleSubmit} className="space-y-4" noValidate>
               <div className="space-y-1.5">
                 <label htmlFor="username" className="block text-xs font-semibold text-text">
                   Admin username

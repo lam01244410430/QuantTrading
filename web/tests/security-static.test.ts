@@ -51,5 +51,6 @@ describe("static security, licensing, and chart architecture invariants", () => 
       "utf8"
     );
     expect(login).toContain("https://www.tradingview.com/");
+    expect(login).toContain('method="post"');
   });
 });
