@@ -466,4 +466,100 @@ describe("BFF route handlers security, auth, and contract parity", () => {
     expect(detailBody.run.result.fills[0].fill_time).toBe(1704153600);
     expect(detailBody.run.result.fills[0].signal_time).toBe(1704067200);
   });
+
+  it("POST /api/runs accepts {} and partial bodies by applying ohlc-signal/v2.1.1 defaults, while still rejecting invalid bounds", async () => {
+    mockedCookieValue = "valid-token";
+    const forwardedBodies: unknown[] = [];
+
+    globalThis.fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      forwardedBodies.push(JSON.parse(String(init?.body ?? "{}")));
+      return new Response(
+        JSON.stringify({
+          id: "22222222-2222-4222-8222-222222222222",
+          status: "queued",
+          created_at: "2026-01-10T00:00:00Z",
+          request: forwardedBodies[forwardedBodies.length - 1],
+        }),
+        { status: 202, headers: { "Content-Type": "application/json" } }
+      );
+    }) as unknown as typeof fetch;
+
+    const emptyRes = await runsPost(
+      new Request("https://app.example.com/api/runs", {
+        method: "POST",
+        headers: SAME_ORIGIN_HEADERS,
+        body: JSON.stringify({}),
+      })
+    );
+    expect(emptyRes.status).toBe(202);
+    expect(emptyRes.headers.get("cache-control")).toBe("no-store");
+    expect(forwardedBodies[0]).toEqual({
+      symbol: "SYNTH",
+      interval: "1d",
+      starting_capital: "10000.00",
+      position_size: "50",
+      fee_rate: "0.001",
+    });
+
+    const partialRes = await runsPost(
+      new Request("https://app.example.com/api/runs", {
+        method: "POST",
+        headers: SAME_ORIGIN_HEADERS,
+        body: JSON.stringify({ interval: "15m" }),
+      })
+    );
+    expect(partialRes.status).toBe(202);
+    expect(forwardedBodies[1]).toEqual({
+      symbol: "SYNTH",
+      interval: "15m",
+      starting_capital: "10000.00",
+      position_size: "50",
+      fee_rate: "0.001",
+    });
+
+    const badBoundsRes = await runsPost(
+      new Request("https://app.example.com/api/runs", {
+        method: "POST",
+        headers: SAME_ORIGIN_HEADERS,
+        body: JSON.stringify({ starting_capital: "0" }),
+      })
+    );
+    expect(badBoundsRes.status).toBe(422);
+
+    const nullFieldRes = await runsPost(
+      new Request("https://app.example.com/api/runs", {
+        method: "POST",
+        headers: SAME_ORIGIN_HEADERS,
+        body: JSON.stringify({ symbol: null }),
+      })
+    );
+    expect(nullFieldRes.status).toBe(422);
+
+    const longUnknownKey = `unexpected_${"k".repeat(4096)}`;
+    const extraFieldRes = await runsPost(
+      new Request("https://app.example.com/api/runs", {
+        method: "POST",
+        headers: SAME_ORIGIN_HEADERS,
+        body: JSON.stringify({ unexpected: "1", [longUnknownKey]: "2" }),
+      })
+    );
+    expect(extraFieldRes.status).toBe(422);
+    expect(extraFieldRes.headers.get("cache-control")).toBe("no-store");
+    const extraFieldText = await extraFieldRes.text();
+    expect(extraFieldText).not.toContain("unexpected");
+    expect(extraFieldText).not.toContain(longUnknownKey);
+    expect(JSON.parse(extraFieldText)).toEqual({
+      ok: false,
+      error: "Invalid backtest parameters",
+      errors: [
+        {
+          code: "E102_BAD_PARAMETER",
+          row: 0,
+          column: "request",
+          message: "Unexpected parameter.",
+        },
+      ],
+    });
+    expect(forwardedBodies).toHaveLength(2);
+  });
 });

@@ -40,6 +40,39 @@ describe("ohlc-signal/v2.1.1 parameter validation", () => {
     expect(minRes.valid).toBe(true);
   });
 
+  it("applies ohlc-signal/v2.1.1 defaults for omitted fields while rejecting invalid or extra fields", () => {
+    const emptyRes = validateBacktestRequest({});
+    expect(emptyRes.valid).toBe(true);
+    expect(emptyRes.request).toEqual(DEFAULT_BACKTEST_REQUEST);
+
+    const partialRes = validateBacktestRequest({ interval: "15m", position_size: "25" });
+    expect(partialRes.valid).toBe(true);
+    expect(partialRes.request).toEqual({
+      ...DEFAULT_BACKTEST_REQUEST,
+      interval: "15m",
+      position_size: "25",
+    });
+
+    expect(validateBacktestRequest({ starting_capital: null }).valid).toBe(false);
+    expect(validateBacktestRequest({ starting_capital: "" }).valid).toBe(false);
+    expect(validateBacktestRequest({ symbol: 123 }).valid).toBe(false);
+    expect(validateBacktestRequest({ interval: null }).valid).toBe(false);
+    expect(validateBacktestRequest({ unknown_field: "x" }).valid).toBe(false);
+
+    const longUnknownKey = `secret_${"x".repeat(4096)}`;
+    const unknownRes = validateBacktestRequest({ [longUnknownKey]: "1" });
+    expect(unknownRes.valid).toBe(false);
+    expect(JSON.stringify(unknownRes.issues)).not.toContain(longUnknownKey);
+    expect(unknownRes.issues).toEqual([
+      {
+        code: "E102_BAD_PARAMETER",
+        row: 0,
+        column: "request",
+        message: "Unexpected parameter.",
+      },
+    ]);
+  });
+
   it("rejects out-of-bounds capital, position size, fee rate, symbol, and interval", () => {
     expect(
       validateBacktestRequest({
