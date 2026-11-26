@@ -38,6 +38,12 @@ def test_throttle_key_uses_rightmost_untrusted_hop_only(peer, headers, proxy_cid
     assert throttle.client_key(request) == expected
 
 
+def test_config_normalizes_ipv4_mapped_proxy_cidrs(monkeypatch):
+    monkeypatch.setenv("QT_TRUSTED_PROXY_CIDRS", "::ffff:10.0.0.0/104, 2001:db8::/32")
+    throttle = LoginThrottle.from_env()
+    assert throttle.trusted_proxies == (ip_network("10.0.0.0/8"), ip_network("2001:db8::/32"))
+
+
 @pytest.mark.parametrize("failure", [None, ConnectionError(), TimeoutError()])
 def test_throttle_rejection_or_outage_does_not_hash(monkeypatch, failure):
     issue = AsyncMock()
@@ -83,12 +89,12 @@ def test_scrypt_capacity_rejects_excess_requests_without_hashing(monkeypatch):
 def test_compose_login_throttle_and_window_reset(monkeypatch, trusted):
     monkeypatch.setenv("QT_LOGIN_LIMIT", "2")
     monkeypatch.setenv("QT_LOGIN_WINDOW_SECONDS", "3")
-    monkeypatch.setenv("QT_TRUSTED_PROXY_CIDRS", "10.0.0.0/8" if trusted else "")
+    monkeypatch.setenv("QT_TRUSTED_PROXY_CIDRS", "::ffff:10.0.0.0/104" if trusted else "")
     monkeypatch.setenv("QT_REDIS_URL", environ["QT_REDIS_URL"].rsplit("/", 1)[0] + "/15")
     suffix = ":".join(uuid4().hex[i:i + 4] for i in range(0, 16, 4))
 
     async def test():
-        peer = "10.0.0.2" if trusted else f"2001:db8:1:1:{suffix}"
+        peer = "::ffff:10.0.0.2" if trusted else f"2001:db8:1:1:{suffix}"
         same_client = f"2001:db8:2:2:{suffix}"
 
         def proxy_header(spoof):

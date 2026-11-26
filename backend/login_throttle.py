@@ -47,7 +47,7 @@ class LoginThrottle:
         return cls(
             bounded_setting("QT_LOGIN_LIMIT", DEFAULT_LIMIT, GLOBAL_LIMIT),
             bounded_setting("QT_LOGIN_WINDOW_SECONDS", DEFAULT_WINDOW_SECONDS, 3600),
-            tuple(ip_network(value.strip()) for value in proxies.split(",") if value.strip()),
+            tuple(normalized_network(value.strip()) for value in proxies.split(",") if value.strip()),
         )
 
     def is_trusted(self, address):
@@ -98,6 +98,15 @@ def normalized_address(value):
     if isinstance(address, IPv6Address):
         return address.ipv4_mapped or IPv6Address(int(address))
     return address
+
+
+def normalized_network(value):
+    network = ip_network(value)
+    if isinstance(network, IPv6Network) and network.prefixlen >= 96:
+        mapped = network.network_address.ipv4_mapped
+        if mapped is not None:
+            return IPv4Network((mapped, network.prefixlen - 96))
+    return network
 
 
 def bounded_setting(name, default, maximum):
