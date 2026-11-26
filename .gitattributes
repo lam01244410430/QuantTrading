@@ -1,0 +1,2 @@
+/fixtures/*.csv text eol=lf
+/tests/expected/* text eol=lf

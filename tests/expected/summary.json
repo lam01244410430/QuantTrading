@@ -1,0 +1,22 @@
+{
+  "bars": "6",
+  "contract_id": "ohlc-signal/v2",
+  "disclaimer": "Simulated backtest on synthetic or local data. Not trading or investment advice. No orders were placed.",
+  "fills": "2",
+  "final_equity": "10199.77",
+  "final_position_units": "0",
+  "gross_pnl": "210.00",
+  "input_file": "fixture_v1_basic.csv",
+  "input_sha256": "f6f56221ed9fa14c99763f64e4956b5baef28d1482c2d7448d5a7222dff6923a",
+  "max_drawdown": "0.004955",
+  "max_drawdown_peak_timestamp": "2026-01-06T00:00:00Z",
+  "max_drawdown_trough_timestamp": "2026-01-07T00:00:00Z",
+  "net_pnl": "199.77",
+  "parameters": {
+    "fee_rate": "0.001",
+    "position_size": "50",
+    "starting_capital": "10000.00"
+  },
+  "symbol": "SYNTH",
+  "total_fees": "10.23"
+}
