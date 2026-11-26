@@ -129,6 +129,8 @@ export function DashboardClient({
   const [errorMessage, setErrorMessage] = React.useState<string | null>(
     backendUnavailable
       ? "Private FastAPI backend is currently unreachable. Start the backend service and refresh."
+      : initialDetail?.status === "failed"
+      ? initialDetail.error ?? "Backtest execution failed."
       : null
   );
   const [fieldIssues, setFieldIssues] = React.useState<ContractIssue[]>([]);
