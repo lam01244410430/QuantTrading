@@ -21,6 +21,7 @@ ENV NODE_ENV=production \
 
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/server.mjs ./server.mjs
+COPY --from=builder /app/proxy-peer.mjs ./proxy-peer.mjs
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules

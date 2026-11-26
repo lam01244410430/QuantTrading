@@ -1,54 +1,70 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { isIP } from "node:net";
+import { normalizePeerAddress } from "../../proxy-peer.mjs";
+
+export { normalizePeerAddress };
+
+export interface RequestPeerContext {
+  clientPeerIp: string | null;
+  fromTrustedProxy: boolean;
+}
 
 const PEER_STORE_SYMBOL = Symbol.for("quanttrading.socketPeerStore");
 
 type GlobalWithPeerStore = typeof globalThis & {
-  [PEER_STORE_SYMBOL]?: AsyncLocalStorage<string | null>;
+  [PEER_STORE_SYMBOL]?: AsyncLocalStorage<RequestPeerContext>;
 };
 
-function getPeerStore(): AsyncLocalStorage<string | null> {
+function getPeerStore(): AsyncLocalStorage<RequestPeerContext> {
   const g = globalThis as GlobalWithPeerStore;
   if (!g[PEER_STORE_SYMBOL]) {
-    g[PEER_STORE_SYMBOL] = new AsyncLocalStorage<string | null>();
+    g[PEER_STORE_SYMBOL] = new AsyncLocalStorage<RequestPeerContext>();
   }
   return g[PEER_STORE_SYMBOL];
 }
 
 /**
- * Normalizes a TCP socket remote address (e.g. "::ffff:127.0.0.1" -> "127.0.0.1").
- * Rejects non-IP strings, comma-separated chains, or empty values.
- */
-export function normalizePeerAddress(raw: string | null | undefined): string | null {
-  if (typeof raw !== "string") return null;
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-
-  if (trimmed.toLowerCase().startsWith("::ffff:")) {
-    const mappedV4 = trimmed.slice(7);
-    if (isIP(mappedV4) === 4) {
-      return mappedV4;
-    }
-  }
-
-  return isIP(trimmed) !== 0 ? trimmed : null;
-}
-
-/**
- * Returns the real TCP socket peer IP for the current request, populated only by
- * web/server.mjs from req.socket.remoteAddress (never from client HTTP headers).
+ * Returns the resolved client peer IP for the current request, populated only by
+ * web/server.mjs (using the real TCP socket peer, or the rightmost untrusted XFF hop
+ * when the socket peer is inside QT_WEB_TRUSTED_PROXY_CIDRS).
  */
 export function getSocketPeer(): string | null {
-  const peer = getPeerStore().getStore();
-  return normalizePeerAddress(peer);
+  const ctx = getPeerStore().getStore();
+  return normalizePeerAddress(ctx?.clientPeerIp);
 }
 
 /**
- * Runs a function with a bound socket peer IP in AsyncLocalStorage.
+ * Returns true only when web/server.mjs verified that the direct TCP socket peer
+ * belongs to QT_WEB_TRUSTED_PROXY_CIDRS.
+ */
+export function isTrustedProxyRequest(): boolean {
+  return getPeerStore().getStore()?.fromTrustedProxy === true;
+}
+
+/**
+ * Runs a function with a bound request peer context in AsyncLocalStorage.
+ */
+export function runWithRequestPeer<T>(
+  context: {
+    clientPeerIp: string | null | undefined;
+    fromTrustedProxy?: boolean;
+  },
+  fn: () => T
+): T {
+  return getPeerStore().run(
+    {
+      clientPeerIp: normalizePeerAddress(context.clientPeerIp),
+      fromTrustedProxy: context.fromTrustedProxy === true,
+    },
+    fn
+  );
+}
+
+/**
+ * Convenience helper for running with an untrusted direct socket peer IP.
  */
 export function runWithSocketPeer<T>(
   peerIp: string | null | undefined,
   fn: () => T
 ): T {
-  return getPeerStore().run(normalizePeerAddress(peerIp), fn);
+  return runWithRequestPeer({ clientPeerIp: peerIp, fromTrustedProxy: false }, fn);
 }

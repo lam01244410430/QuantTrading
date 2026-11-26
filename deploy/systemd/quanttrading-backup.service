@@ -1,0 +1,12 @@
+[Unit]
+Description=QuantTrading daily PostgreSQL pg_dump to S3 (SSE-KMS)
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/quanttrading
+Environment=QT_ENV_FILE=/etc/quanttrading/prod.env
+ExecStart=/opt/quanttrading/deploy/backup-postgres.sh
+StandardOutput=journal
+StandardError=journal

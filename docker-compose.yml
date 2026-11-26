@@ -137,6 +137,7 @@ networks:
     ipam:
       config:
         - subnet: ${QT_BFF_SUBNET:-172.30.0.0/28}
+          ip_range: ${QT_BFF_IP_RANGE:-${QT_BFF_SUBNET:-172.30.0.0/29}}
 
 volumes:
   postgres-data:

@@ -1,11 +1,16 @@
+import { isTrustedProxyRequest } from "./peer";
+
 /**
  * Origin/Referer CSRF validation for mutating BFF routes.
  * Rejects cross-origin POST/PUT/PATCH/DELETE requests with HTTP 403.
+ * Trusts x-forwarded-host ONLY when the direct TCP peer is in QT_WEB_TRUSTED_PROXY_CIDRS.
  */
 export function verifySameOrigin(request: Request): { ok: boolean; reason?: string } {
-  const hostHeader =
-    request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ||
-    request.headers.get("host")?.trim();
+  const trustedProxy = isTrustedProxyRequest();
+  const forwardedHost = trustedProxy
+    ? request.headers.get("x-forwarded-host")?.split(",")[0]?.trim()
+    : undefined;
+  const hostHeader = forwardedHost || request.headers.get("host")?.trim();
 
   if (!hostHeader) {
     return { ok: false, reason: "Missing Host header" };
@@ -43,8 +48,10 @@ export function verifySameOrigin(request: Request): { ok: boolean; reason?: stri
 export function isSecureRequest(request: Request): boolean {
   if (process.env.COOKIE_SECURE === "true") return true;
   if (process.env.COOKIE_SECURE === "false") return false;
-  const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
-  if (proto === "https") return true;
+  if (isTrustedProxyRequest()) {
+    const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
+    if (proto === "https") return true;
+  }
   try {
     return new URL(request.url).protocol === "https:";
   } catch {
