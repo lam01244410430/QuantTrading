@@ -32,8 +32,9 @@ if [[ "${RENDER_ONLY}" -eq 0 ]]; then
 fi
 
 ENV_DIR="$(dirname "${ENV_FILE}")"
-mkdir -p "${ENV_DIR}"
-chmod 700 "${ENV_DIR}"
+if [[ ! -d "${ENV_DIR}" ]]; then
+  mkdir -m 700 -p "${ENV_DIR}"
+fi
 
 TMP_ENV="$(mktemp "${ENV_DIR}/.prod.env.XXXXXX")"
 chmod 600 "${TMP_ENV}"
@@ -66,6 +67,7 @@ OPTIONAL_KEYS = (
     "QT_TRUSTED_PROXY_CIDRS",
     "QT_WEB_TRUSTED_PROXY_CIDRS",
     "QT_BFF_SUBNET",
+    "QT_BFF_IP_RANGE",
     "QT_WEB_BFF_IP",
     "QT_CADDY_BFF_IP",
     "QT_BACKUP_S3_BUCKET",
@@ -73,6 +75,9 @@ OPTIONAL_KEYS = (
     "QT_BACKUP_KMS_KEY_ID",
     "AWS_REGION",
 )
+
+FORBIDDEN_CHARS = set("$\x27\"`\\#")
+POSTGRES_URL_UNSAFE = set("@/:?%")
 
 out_path = sys.argv[1]
 raw = sys.stdin.read()
@@ -96,8 +101,18 @@ for key in (*REQUIRED_KEYS, *OPTIONAL_KEYS):
     if key not in data or data[key] is None:
         continue
     val = str(data[key])
-    if "\n" in val or "\r" in val or "\x00" in val:
-        sys.stderr.write(f"Secret key {key} contains disallowed control characters\n")
+    if any(ch in FORBIDDEN_CHARS or ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in val):
+        sys.stderr.write(
+            f"Secret key {key} contains disallowed characters for Docker Compose env-file "
+            "(no $, quotes, backticks, backslashes, #, whitespace, or control chars; "
+            "use openssl rand -base64 32)\n"
+        )
+        raise SystemExit(1)
+    if key == "QT_POSTGRES_PASSWORD" and any(ch in POSTGRES_URL_UNSAFE for ch in val):
+        sys.stderr.write(
+            "Secret key QT_POSTGRES_PASSWORD contains URL-reserved characters (@, /, :, ?, %); "
+            "use openssl rand -hex 32 or URL-safe base64\n"
+        )
         raise SystemExit(1)
     lines.append(f"{key}={val}\n")
 

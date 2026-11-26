@@ -38,8 +38,9 @@ and `redis` have no host ports in `docker-compose.prod.yml`.
 
 ## 1. AWS infrastructure checklist
 
-Provision the following in your AWS account (e.g. `ap-southeast-1` or
-`ap-northeast-1`):
+Provision the following in **`ap-northeast-1` (Tokyo) or `ap-southeast-1`
+(Singapore)** — Binance.com and Bybit block US-region IPs, so the
+exchange-facing host must not be deployed in US regions:
 
 1. **EC2 instance:** Ubuntu 24.04 LTS (`t3.medium` minimum; `t3.large` when
    additional workers are added later) with an **encrypted gp3 EBS volume**
@@ -89,7 +90,21 @@ Provision the following in your AWS account (e.g. `ap-southeast-1` or
 ## 2. Create the Secrets Manager secret (`quanttrading/prod`)
 
 Create a JSON secret named `quanttrading/prod` in AWS Secrets Manager with
-high-entropy values (never commit these to git):
+high-entropy values generated via `openssl rand -base64 32` (never commit these
+to git):
+
+```sh
+openssl rand -base64 32
+```
+
+> **Character restrictions:** Docker Compose `--env-file` interpolates `$`,
+> strips quotes, and treats `#` as comments. `deploy/deploy-aws.sh` rejects
+> any value containing `$`, `'`, `"`, `` ` ``, `\`, `#`, whitespace, or control
+> characters (logging only the key name, never the value). Base64 values from
+> `openssl rand -base64 32` are safe for `QT_ADMIN_PASSWORD` and
+> `QT_JWT_SECRET` and render byte-identical. For `QT_POSTGRES_PASSWORD` (which
+> is embedded in `QT_DATABASE_URL`), use `openssl rand -hex 32` (or URL-safe
+> base64 without `@`, `/`, `:`, `?`, `%`).
 
 ```json
 {
@@ -161,14 +176,30 @@ sudo systemctl start quanttrading-backup.service
 sudo journalctl -u quanttrading-backup.service -n 20 --no-pager
 ```
 
-### Restore procedure (drill on a disposable DB first)
+### Restore procedure (fresh empty DB / volume only — never restore over a live DB)
+
+TimescaleDB logical restores require an **empty database on the same
+TimescaleDB extension version** (`timescale/timescaledb:2.19.3-pg16`) and must
+bracket the `psql` load with `timescaledb_pre_restore()` and
+`timescaledb_post_restore()`. Always drill into a fresh database or volume,
+never over the live production database:
 
 ```sh
+# 1. Download the encrypted backup from S3
 aws s3 cp s3://<BACKUP_BUCKET>/postgres/quanttrading-<TIMESTAMP>.sql.gz /tmp/restore.sql.gz
-gunzip -c /tmp/restore.sql.gz | sudo docker compose \
-  -f /opt/quanttrading/docker-compose.yml \
-  -f /opt/quanttrading/docker-compose.prod.yml \
-  --env-file /etc/quanttrading/prod.env \
-  exec -T postgres sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+
+# 2. Start a fresh TimescaleDB container on the same image version (or recreate an empty DB)
+#    and prepare it for restore:
+docker exec -i <fresh-postgres-container> sh -ec \
+  'PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS timescaledb; SELECT timescaledb_pre_restore();"'
+
+# 3. Load the logical dump
+gunzip -c /tmp/restore.sql.gz | docker exec -i <fresh-postgres-container> sh -ec \
+  'PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+
+# 4. Re-enable TimescaleDB background workers and catalog hooks
+docker exec -i <fresh-postgres-container> sh -ec \
+  'PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT timescaledb_post_restore();"'
+
 rm -f /tmp/restore.sql.gz
 ```
