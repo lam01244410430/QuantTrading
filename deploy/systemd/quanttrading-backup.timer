@@ -1,0 +1,10 @@
+[Unit]
+Description=Run QuantTrading daily PostgreSQL backup to S3 (SSE-KMS)
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 UTC
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

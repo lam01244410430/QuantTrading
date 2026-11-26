@@ -1,0 +1,43 @@
+services:
+  postgres:
+    restart: unless-stopped
+  redis:
+    restart: unless-stopped
+  api:
+    restart: unless-stopped
+    ports: !reset []
+  worker:
+    restart: unless-stopped
+  web:
+    restart: unless-stopped
+    ports: !reset []
+    environment:
+      COOKIE_SECURE: "true"
+      QT_WEB_TRUSTED_PROXY_CIDRS: ${QT_WEB_TRUSTED_PROXY_CIDRS:-${QT_CADDY_BFF_IP:-172.30.0.11}/32}
+  caddy:
+    image: ${QT_CADDY_IMAGE:-caddy:2.9-alpine}
+    restart: unless-stopped
+    environment:
+      QT_DOMAIN: ${QT_DOMAIN:?set QT_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      bff:
+        ipv4_address: ${QT_CADDY_BFF_IP:-172.30.0.11}
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:2019/config/"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  caddy-data:
+  caddy-config:
