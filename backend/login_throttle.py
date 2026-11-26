@@ -10,6 +10,7 @@ DEFAULT_LIMIT = 10
 DEFAULT_WINDOW_SECONDS = 60
 GLOBAL_LIMIT = 120
 HASH_CONCURRENCY = 2
+FORWARDED_LIMIT = 2048
 PREFIX = "qt:{login}:"
 
 ADMIT = """
@@ -58,15 +59,14 @@ class LoginThrottle:
         except ValueError:
             return "unknown"
         if self.is_trusted(peer):
-            headers = request.headers.getlist("x-forwarded-for")
-            if headers and sum(map(len, headers)) + len(headers) <= 2048:
-                for hop in reversed(",".join(headers).split(",")):
-                    try:
-                        address = normalized_address(hop.strip())
-                    except ValueError:
-                        break
-                    if not self.is_trusted(address):
-                        return str(address)
+            for hop in forwarded_tail(request.headers.getlist("x-forwarded-for")):
+                try:
+                    address = normalized_address(hop.strip())
+                except ValueError:
+                    break
+                if not self.is_trusted(address):
+                    return str(address)
+            return "invalid-forwarded"
         return str(peer)
 
     async def retry_after(self, redis, request: Request) -> int:
@@ -75,6 +75,22 @@ class LoginThrottle:
             return await redis.eval(
                 ADMIT, 2, PREFIX + key, PREFIX + "global", self.limit, GLOBAL_LIMIT, self.window_seconds,
             )
+
+
+def forwarded_tail(headers):
+    remaining = FORWARDED_LIMIT
+    for header in reversed(headers):
+        if len(header) > remaining:
+            tail = header[-remaining:]
+            if header[-remaining - 1] != ",":
+                _, _, tail = tail.partition(",")
+            if tail:
+                yield from reversed(tail.split(","))
+            return
+        yield from reversed(header.split(","))
+        remaining -= len(header) + 1
+        if remaining <= 0:
+            return
 
 
 def normalized_address(value):

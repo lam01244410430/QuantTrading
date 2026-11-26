@@ -23,8 +23,11 @@ INVALID_LOGIN = {"username": "sentinel-user", "password": "sentinel-password"}
     ("127.0.0.1", ["192.0.2.3"], (), "127.0.0.1"),
     ("10.0.0.3", ["192.0.2.3, 198.51.100.9, 10.1.0.2"], ("10.0.0.0/8",), "198.51.100.9"),
     ("10.0.0.3", ["192.0.2.3", "198.51.100.9, 10.1.0.2"], ("10.0.0.0/8",), "198.51.100.9"),
-    ("10.0.0.3", ["198.51.100.9, not-an-ip"], ("10.0.0.0/8",), "10.0.0.3"),
-    ("10.0.0.3", ["10.1.0.2"], ("10.0.0.0/8",), "10.0.0.3"),
+    ("10.0.0.3", ["198.51.100.9, not-an-ip"], ("10.0.0.0/8",), "invalid-forwarded"),
+    ("10.0.0.3", ["10.1.0.2"], ("10.0.0.0/8",), "invalid-forwarded"),
+    ("10.0.0.3", ["x" * 3000 + ", 198.51.100.9, 10.1.0.2"], ("10.0.0.0/8",), "198.51.100.9"),
+    ("10.0.0.3", ["x" * 3000, "198.51.100.9, 10.1.0.2"], ("10.0.0.0/8",), "198.51.100.9"),
+    ("10.0.0.3", ["x" * 3000 + ", 10.1.0.2"], ("10.0.0.0/8",), "invalid-forwarded"),
     ("::ffff:192.0.2.1", [], (), "192.0.2.1"),
 ])
 def test_throttle_key_uses_rightmost_untrusted_hop_only(peer, headers, proxy_cidrs, expected):
@@ -97,7 +100,7 @@ def test_compose_login_throttle_and_window_reset(monkeypatch, trusted):
             for spoof in ("192.0.2.1", "192.0.2.2"):
                 response = await api.post(PATH, json=INVALID_LOGIN, headers=proxy_header(spoof))
                 assert response.status_code == 401
-            blocked = await api.post(PATH, json=INVALID_LOGIN, headers=proxy_header("192.0.2.3"))
+            blocked = await api.post(PATH, json=INVALID_LOGIN, headers=proxy_header("x" * 3000))
             assert blocked.status_code == 429
             assert blocked.json() == {"detail": "Too many login attempts"}
             assert 1 <= int(blocked.headers["Retry-After"]) <= 3

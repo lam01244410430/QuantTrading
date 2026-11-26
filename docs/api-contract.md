@@ -42,8 +42,10 @@ guard do not run the password hash.
 
 Client identity is the connection peer by default. With explicitly
 configured trusted proxy CIDRs, the API uses the rightmost untrusted IP
-in the trusted peer's `X-Forwarded-For` chain. Proxies must append the
-actual connecting address or replace the incoming header. With no trusted
+in the trusted peer's `X-Forwarded-For` chain, parsing at most the last
+2048 header bytes. If no client can be determined, requests from trusted
+peers share one invalid-forwarding bucket. Proxies must append the actual
+connecting address or replace the incoming header. With no trusted
 proxies configured, all forwarded headers are ignored; requests from one
 BFF peer share that peer's limit.
 
